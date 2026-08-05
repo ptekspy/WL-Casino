@@ -1,0 +1,50 @@
+name: Apply collector routes
+
+on:
+  push:
+    branches:
+      - agent/collector-route-movement
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.14.0 --activate
+
+      - name: Rebuild and apply patch
+        run: |
+          cat scripts/collector-route-parts/part-*.b64 | base64 --decode > scripts/apply-collector-routes.mjs
+          node scripts/apply-collector-routes.mjs
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/lib/wildwood.ts src/lib/wildwood.test.ts src/components/wildwood-pixi-board.tsx
+          git commit -m "Implement collector route movement"
+          git push origin HEAD:${GITHUB_REF_NAME}
