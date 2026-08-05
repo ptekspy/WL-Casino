@@ -1,0 +1,35 @@
+name: Cascade value RTP experiment
+
+on:
+  push:
+    branches:
+      - agent/cascade-value-rtp-experiment
+
+permissions:
+  contents: read
+
+jobs:
+  experiment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run five deterministic one-million-round variants
+        env:
+          EXPERIMENT_RUNS: 1000000
+        run: node scripts/experiment-cascade-values.mjs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cascade-value-rtp-experiment
+          path: reports/cascade-value-experiment
