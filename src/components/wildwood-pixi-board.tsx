@@ -61,6 +61,36 @@ function lerpColor(from: number, to: number, t: number): number {
   return (r << 16) | (g << 8) | b;
 }
 
+type IdleMotion = { x: number; y: number; rotation: number; scaleX: number; scaleY: number };
+
+/** Symbol-specific micro-motion keeps the board alive without making it visually noisy. */
+function getIdleMotion(symbol: SymbolType, time: number, phase: number): IdleMotion {
+  const slow = Math.sin(time * 1.15 + phase);
+  const medium = Math.sin(time * 1.8 + phase * 0.7);
+  switch (symbol) {
+    case "leaf":
+      return { x: slow * 0.8, y: medium * 1.3, rotation: slow * 0.032, scaleX: 1 + medium * 0.012, scaleY: 1 - medium * 0.008 };
+    case "acorn":
+      return { x: slow * 0.35, y: medium * 1.6, rotation: slow * 0.018, scaleX: 1 + medium * 0.01, scaleY: 1 + medium * 0.018 };
+    case "mushroom":
+      return { x: 0, y: medium * 0.8, rotation: slow * 0.012, scaleX: 1 + medium * 0.022, scaleY: 1 - medium * 0.014 };
+    case "bloom":
+      return { x: slow * 0.6, y: medium * 0.9, rotation: slow * 0.026, scaleX: 1 + medium * 0.018, scaleY: 1 + medium * 0.018 };
+    case "root":
+      return { x: slow * 0.35, y: medium * 0.6, rotation: slow * 0.038, scaleX: 1 + slow * 0.014, scaleY: 1 - slow * 0.01 };
+    case "spiritSeed":
+      return { x: slow * 0.8, y: medium * 2.2, rotation: slow * 0.018, scaleX: 1 + medium * 0.025, scaleY: 1 + medium * 0.025 };
+    case "fox":
+    case "owl":
+    case "stag":
+    case "wisp":
+      return { x: slow * 0.45, y: medium * 1.1, rotation: slow * 0.018, scaleX: 1 + medium * 0.024, scaleY: 1 + medium * 0.024 };
+    case "rot":
+    default:
+      return { x: 0, y: slow * 0.25, rotation: slow * 0.006, scaleX: 1, scaleY: 1 };
+  }
+}
+
 export type WildwoodBoardHandle = {
   /** Instantly jumps to a step, cancelling any in-flight autoplay. */
   seek: (stepIndex: number) => void;
@@ -162,6 +192,7 @@ type CellView = {
   symbol: SymbolType | null;
   container: Container;
   tileSprite: Sprite;
+  tileDepth: Graphics;
   glow: Graphics;
   shadowSprite: Sprite;
   symbolSprite: Sprite;
@@ -172,6 +203,11 @@ type CellView = {
   targetsBg: Graphics;
   targetIcons: Sprite[];
   targetsAnyLabel: Text;
+  motionLocked: boolean;
+  baseSymbolScaleX: number;
+  baseSymbolScaleY: number;
+  baseShadowScaleX: number;
+  baseShadowScaleY: number;
 };
 
 type BoardWorld = {
@@ -237,12 +273,34 @@ function buildWorld(app: Application): BoardWorld {
   mist.position.set(-100, DESIGN_H - mist.height * 0.7);
   shakeContainer.addChild(mist);
 
+  const nearMist = new Sprite(getWildwoodTexture(WILDWOOD_TEXTURE_KEYS.mist));
+  nearMist.width = DESIGN_W + 320;
+  nearMist.height = (DESIGN_W + 320) * 0.2;
+  nearMist.position.set(-160, DESIGN_H - nearMist.height * 0.38);
+  nearMist.alpha = 0.32;
+  nearMist.tint = 0xbfffe7;
+  shakeContainer.addChild(nearMist);
+
+  const atmosphereTint = new Graphics().rect(0, 0, DESIGN_W, DESIGN_H).fill({ color: 0x180d25, alpha: 1 });
+  atmosphereTint.alpha = 0;
+  shakeContainer.addChild(atmosphereTint);
+
+  const forestField = new ParticleField(app.ticker, getWildwoodTexture(WILDWOOD_TEXTURE_KEYS.glow), DESIGN_W, DESIGN_H);
+  forestField.setMode("idle");
+  forestField.setIntensity(0.75);
+  shakeContainer.addChild(forestField.container);
+
+  let presentationLevel = 0;
+  let bonusPresentation = false;
   let driftPhase = 0;
   const driftTicker = (ticker: Ticker) => {
     driftPhase += ticker.deltaMS / 1000;
-    treeline.position.x = -30 + Math.sin(driftPhase * 0.05) * 14;
-    canopyLight.alpha = 0.48 + Math.sin(driftPhase * 0.3) * 0.08;
-    mist.position.x = -100 + Math.sin(driftPhase * 0.08) * 40;
+    treeline.position.x = -30 + Math.sin(driftPhase * 0.05) * (14 + presentationLevel * 1.5);
+    canopyLight.alpha = 0.46 + Math.sin(driftPhase * 0.3) * 0.08 + presentationLevel * 0.035 + (bonusPresentation ? 0.12 : 0);
+    mist.position.x = -100 + Math.sin(driftPhase * 0.08) * (40 + presentationLevel * 4);
+    nearMist.position.x = -160 - Math.sin(driftPhase * 0.065) * (55 + presentationLevel * 5);
+    nearMist.alpha = 0.28 + presentationLevel * 0.025 + Math.sin(driftPhase * 0.22) * 0.04;
+    atmosphereTint.alpha = presentationLevel * 0.028 + (bonusPresentation ? 0.11 : 0);
   };
   app.ticker.add(driftTicker);
 
@@ -277,7 +335,13 @@ function buildWorld(app: Application): BoardWorld {
   const frameGraphics = new Graphics();
   frameGraphics.position.set(FRAME_PAD, TOP_BAR + FRAME_PAD);
   shakeContainer.addChild(frameGraphics);
-  drawBoardFrame(frameGraphics);
+  drawBoardFrame(frameGraphics, 0, false);
+
+  const frameEnergy = new Graphics();
+  frameEnergy.position.set(FRAME_PAD, TOP_BAR + FRAME_PAD);
+  frameEnergy.blendMode = "add";
+  shakeContainer.addChild(frameEnergy);
+  drawFrameEnergy(frameEnergy, 0, false);
 
   const boardContainer = new Container();
   boardContainer.position.set(FRAME_PAD, TOP_BAR + FRAME_PAD);
@@ -324,16 +388,24 @@ function buildWorld(app: Application): BoardWorld {
   let glowPulse = 0;
   const pulseTicker = (ticker: Ticker) => {
     glowPulse += ticker.deltaMS / 1000;
+    const energyPulse = 0.45 + Math.sin(glowPulse * (1.5 + presentationLevel * 0.12)) * 0.28;
+    frameEnergy.alpha = presentationLevel === 0 && !bonusPresentation ? 0 : energyPulse + presentationLevel * 0.05;
+    foliage.alpha = 0.9 + Math.sin(glowPulse * 0.7) * 0.06;
+
     for (const cell of cells) {
-      if (cell.symbol) {
-        // Gentle idle life so the board never looks frozen between plays —
-        // collectors "breathe" a bit more than plain resource symbols.
+      if (cell.symbol && !cell.motionLocked) {
         const phase = cell.x * 1.7 + cell.y * 2.3;
-        const amplitude = isCollectorSymbol(cell.symbol) ? 0.05 : 0.022;
-        cell.symbolSprite.rotation = Math.sin(glowPulse * 1.3 + phase) * amplitude;
+        const motion = getIdleMotion(cell.symbol, glowPulse, phase);
+        cell.symbolSprite.position.set(CELL / 2 + motion.x, CELL / 2 + motion.y);
+        cell.shadowSprite.position.set(CELL / 2 + 3 + motion.x * 0.55, CELL / 2 + 6 + motion.y * 0.45);
+        cell.symbolSprite.rotation = motion.rotation;
+        cell.shadowSprite.rotation = motion.rotation * 0.7;
+        cell.symbolSprite.scale.set(cell.baseSymbolScaleX * motion.scaleX, cell.baseSymbolScaleY * motion.scaleY);
+        cell.shadowSprite.scale.set(cell.baseShadowScaleX * motion.scaleX, cell.baseShadowScaleY * motion.scaleY);
       }
       if (cell.glow.alpha === 0 && !cell.symbol) continue;
-      cell.glow.alpha = 0.55 + Math.sin(glowPulse * 2 + cell.x * 0.7 + cell.y * 0.5) * 0.35;
+      cell.glow.alpha = 0.52 + Math.sin(glowPulse * 2 + cell.x * 0.7 + cell.y * 0.5) * 0.32 + presentationLevel * 0.035;
+      cell.tileSprite.alpha = 0.96 + Math.sin(glowPulse * 0.45 + cell.x + cell.y) * 0.025;
     }
   };
   app.ticker.add(pulseTicker);
@@ -384,12 +456,23 @@ function buildWorld(app: Application): BoardWorld {
     const texture = getSymbolTexture(symbol);
     restoreCellSymbolVisualState(cell);
     cell.symbol = symbol;
+    cell.motionLocked = false;
+    const iconSize = isCollectorSymbol(symbol) ? CELL * 0.9 : symbol === "spiritSeed" ? CELL * 0.84 : CELL * 0.78;
     cell.symbolSprite.texture = texture;
-    cell.symbolSprite.width = CELL * 0.8;
-    cell.symbolSprite.height = CELL * 0.8;
+    cell.symbolSprite.width = iconSize;
+    cell.symbolSprite.height = iconSize;
+    cell.symbolSprite.position.set(CELL / 2, CELL / 2);
+    cell.symbolSprite.rotation = 0;
     cell.shadowSprite.texture = texture;
-    cell.shadowSprite.width = CELL * 0.8;
-    cell.shadowSprite.height = CELL * 0.8;
+    cell.shadowSprite.width = iconSize;
+    cell.shadowSprite.height = iconSize;
+    cell.shadowSprite.position.set(CELL / 2 + 3, CELL / 2 + 6);
+    cell.shadowSprite.rotation = 0;
+    cell.shadowSprite.alpha = isCollectorSymbol(symbol) ? 0.42 : 0.34;
+    cell.baseSymbolScaleX = cell.symbolSprite.scale.x;
+    cell.baseSymbolScaleY = cell.symbolSprite.scale.y;
+    cell.baseShadowScaleX = cell.shadowSprite.scale.x;
+    cell.baseShadowScaleY = cell.shadowSprite.scale.y;
     drawGlow(cell);
     drawValueLabel(cell);
     drawCollectorTargets(cell);
@@ -437,24 +520,33 @@ function buildWorld(app: Application): BoardWorld {
    * "this wins" multiplier chip, plain symbols get a quiet value chip, and rot
    * gets nothing at all, so its worthlessness reads without checking the legend.
    */
-  function drawValueLabel(cell: CellView) {
+  function drawValueLabel(cell: CellView, emphasisColor?: number) {
     cell.valueBg.clear();
     if (!cell.symbol || cell.symbol === "rot") {
       cell.valueLabel.text = "";
+      cell.valueLabel.alpha = 0;
       return;
     }
     const symbol = cell.symbol;
     const isCollector = isCollectorSymbol(symbol);
+    const isSeed = symbol === "spiritSeed";
     const label = isCollector
       ? `${WILDWOOD_CONFIG.collectorMultipliers[symbol]}x`
       : formatCollectableValueLabel(getScaledCollectableValue(symbol, collectableValueMultiplier));
     cell.valueLabel.text = label;
-    cell.valueLabel.style.fill = isCollector ? 0x2a1704 : 0xffffff;
+    cell.valueLabel.style.fill = isCollector ? 0x2a1704 : emphasisColor ?? (isSeed ? 0xcffafe : 0xf8f1dc);
+    cell.valueLabel.alpha = isCollector || emphasisColor !== undefined ? 1 : isSeed ? 0.92 : 0.72;
     const halfWidth = cell.valueLabel.width / 2 + 7;
+    const bgColor = isCollector ? 0xf5c542 : isSeed ? 0x082f49 : 0x070a08;
+    cell.valueBg.alpha = isCollector || emphasisColor !== undefined ? 1 : 0.82;
     cell.valueBg
       .roundRect(CELL / 2 - halfWidth, CELL - 22, halfWidth * 2, 18, 9)
-      .fill({ color: isCollector ? 0xf5c542 : 0x000000, alpha: isCollector ? 0.92 : 0.55 })
-      .stroke({ width: 1, color: isCollector ? 0x8a5a12 : 0xffffff, alpha: isCollector ? 0.6 : 0.15 });
+      .fill({ color: bgColor, alpha: isCollector ? 0.94 : 0.62 })
+      .stroke({
+        width: emphasisColor !== undefined ? 2 : 1,
+        color: isCollector ? 0x8a5a12 : emphasisColor ?? (isSeed ? 0x22d3ee : 0xf8f1dc),
+        alpha: isCollector ? 0.65 : emphasisColor !== undefined ? 0.9 : 0.18
+      });
   }
 
   function setCollectableValueMultiplier(multiplier: number) {
@@ -465,11 +557,61 @@ function buildWorld(app: Application): BoardWorld {
     }
   }
 
+  async function animateCollectableValueIncrease(
+    nextMultiplier: number,
+    gen: number,
+    headline: string,
+    detail: string
+  ) {
+    if (nextMultiplier <= collectableValueMultiplier) {
+      setCollectableValueMultiplier(nextMultiplier);
+      return;
+    }
+    const activeCells = cells.filter(
+      (cell) => cell.symbol && cell.symbol !== "rot" && !isCollectorSymbol(cell.symbol) && cell.symbolSprite.visible
+    );
+    const callout = buildValueRiseCallout(headline, detail);
+    callout.position.set(BOARD_W / 2, 38);
+    callout.alpha = 0;
+    callout.scale.set(0.72);
+    fxLayer.addChild(callout);
+    let labelsUpdated = false;
+    wildwoodSound.playValueRise(nextMultiplier);
+
+    await runner.animate(620, (p) => {
+      if (!labelsUpdated && p >= 0.36) {
+        labelsUpdated = true;
+        setCollectableValueMultiplier(nextMultiplier);
+      }
+      const pulse = Math.sin(Math.min(1, p / 0.78) * Math.PI);
+      callout.alpha = p < 0.16 ? p / 0.16 : p > 0.82 ? 1 - (p - 0.82) / 0.18 : 1;
+      callout.scale.set(0.72 + Easing.outBack(Math.min(1, p / 0.55)) * 0.28);
+      for (const cell of activeCells) {
+        cell.valueLabel.scale.set(1 + pulse * 0.24);
+        cell.valueLabel.position.y = CELL - 13 - pulse * 5;
+        cell.flash.clear();
+        if (pulse > 0.02) {
+          cell.flash.roundRect(12, CELL - 29, CELL - 24, 25, 11).fill({ color: 0xffe9a8, alpha: pulse * 0.09 });
+        }
+      }
+    });
+    if (!labelsUpdated) setCollectableValueMultiplier(nextMultiplier);
+    if (callout.parent) callout.destroy({ children: true });
+    for (const cell of activeCells) {
+      cell.valueLabel.scale.set(1);
+      cell.valueLabel.position.y = CELL - 13;
+      cell.flash.clear();
+      drawValueLabel(cell);
+    }
+    if (gen !== currentGeneration) return;
+  }
+
   function drawGlow(cell: CellView) {
     cell.glow.clear();
     if (!cell.symbol) return;
     if (isCollectorSymbol(cell.symbol)) {
-      cell.glow.circle(CELL / 2, CELL / 2, CELL * 0.47).stroke({ width: 3, color: SYMBOL_COLORS[cell.symbol], alpha: 0.6 });
+      cell.glow.circle(CELL / 2, CELL / 2, CELL * 0.47).stroke({ width: 5, color: SYMBOL_COLORS[cell.symbol], alpha: 0.18 });
+      cell.glow.circle(CELL / 2, CELL / 2, CELL * 0.435).stroke({ width: 2.5, color: SYMBOL_COLORS[cell.symbol], alpha: 0.78 });
     } else if (cell.symbol === "spiritSeed") {
       cell.glow.circle(CELL / 2, CELL / 2, CELL * 0.47).stroke({ width: 2.5, color: SYMBOL_COLORS.spiritSeed, alpha: 0.5 });
     }
@@ -481,7 +623,11 @@ function buildWorld(app: Application): BoardWorld {
    * only shared target, so they can show multiple concentric collector rings.
    */
   function setCollectorTargetPreview(step: WildwoodStep | undefined) {
-    for (const cell of cells) drawGlow(cell);
+    for (const cell of cells) {
+      drawGlow(cell);
+      drawValueLabel(cell);
+      cell.valueLabel.scale.set(1);
+    }
 
     const collectorsByTarget = new Map<string, CollectorType[]>();
     for (const route of step?.collectorRoutes ?? []) {
@@ -501,22 +647,44 @@ function buildWorld(app: Application): BoardWorld {
       collectors.slice(0, 4).forEach((collector, index) => {
         const radius = CELL * (0.47 - index * 0.045);
         cell.glow.circle(CELL / 2, CELL / 2, radius).stroke({
-          width: 3,
+          width: index === 0 ? 4 : 3,
           color: SYMBOL_COLORS[collector],
-          alpha: 0.88
+          alpha: 0.92
         });
       });
+      drawValueLabel(cell, SYMBOL_COLORS[collectors[0]]);
+      cell.valueLabel.scale.set(1.06);
     }
   }
 
   function clearCollectorTargetPreview() {
-    for (const cell of cells) drawGlow(cell);
+    for (const cell of cells) {
+      drawGlow(cell);
+      drawValueLabel(cell);
+      cell.valueLabel.scale.set(1);
+    }
   }
 
   function setBonusTiles(active: boolean) {
     const texture = getWildwoodTexture(active ? WILDWOOD_TEXTURE_KEYS.tileBonus : WILDWOOD_TEXTURE_KEYS.tile);
     for (const cell of cells) cell.tileSprite.texture = texture;
     ambientField.setMode(active ? "bonus" : "idle");
+    forestField.setMode(active ? "bonus" : "idle");
+  }
+
+  function setPresentationLevel(level: number, bonus = false) {
+    presentationLevel = Math.max(0, Math.min(5, Math.floor(level)));
+    bonusPresentation = bonus;
+    const energy = bonus ? 1 : presentationLevel / 5;
+    ambientField.setIntensity((bonus ? 2.5 : 1) + presentationLevel * 0.38);
+    forestField.setIntensity((bonus ? 1.8 : 0.75) + presentationLevel * 0.2);
+    spotlight.alpha = 0.64 + presentationLevel * 0.055 + (bonus ? 0.12 : 0);
+    spotlight.tint = bonus ? 0xffdf9a : lerpColor(0xd9ffe9, 0xffd6f7, energy * 0.65);
+    foliage.tint = bonus ? 0xffe2a4 : lerpColor(0xffffff, 0xb5ffd3, energy);
+    drawBoardFrame(frameGraphics, presentationLevel, bonus);
+    drawFrameEnergy(frameEnergy, presentationLevel, bonus);
+    const tileTint = bonus ? 0xf1ddff : lerpColor(0xffffff, 0xdfffe9, energy * 0.52);
+    for (const cell of cells) cell.tileSprite.tint = tileTint;
   }
 
   function setBoardInstant(board: BoardCell[]) {
@@ -619,6 +787,56 @@ function buildWorld(app: Application): BoardWorld {
     return [x * (CELL + GAP) + CELL / 2, y * (CELL + GAP) + CELL / 2];
   }
 
+  function spawnCollectorTrailMote(symbol: CollectorType, x: number, y: number, index: number) {
+    const texture = symbol === "stag" ? getSymbolTexture("leaf") : getWildwoodTexture(symbol === "wisp" ? WILDWOOD_TEXTURE_KEYS.glow : WILDWOOD_TEXTURE_KEYS.sparkle);
+    const sprite = new Sprite(texture);
+    sprite.anchor.set(0.5);
+    sprite.tint = SYMBOL_COLORS[symbol];
+    sprite.blendMode = "add";
+    sprite.alpha = 0.82;
+    const size = symbol === "stag" ? 13 : symbol === "wisp" ? 18 : 11;
+    sprite.width = size;
+    sprite.height = size;
+    sprite.position.set(x + (Math.random() - 0.5) * 10, y + (Math.random() - 0.5) * 10);
+    sprite.rotation = index * 0.9 + Math.random();
+    fxLayer.addChild(sprite);
+    void runner
+      .animate(420, (p) => {
+        sprite.position.y += symbol === "fox" ? p * 0.45 : symbol === "owl" ? p * 0.22 : -p * 0.18;
+        sprite.rotation += 0.05;
+        sprite.alpha = (1 - p) * 0.82;
+        sprite.scale.set(1 - p * 0.55);
+      })
+      .then(() => sprite.destroy());
+  }
+
+  function spawnValueFly(x: number, y: number, symbol: SymbolType, collector: CollectorType) {
+    const token = new Sprite(getSymbolTexture(symbol));
+    token.anchor.set(0.5);
+    token.width = 24;
+    token.height = 24;
+    token.tint = 0xffffff;
+    const [startX, startY] = cellCenter(x, y);
+    const targetX = potBadge.container.position.x - boardContainer.position.x;
+    const targetY = potBadge.container.position.y - boardContainer.position.y;
+    token.position.set(startX, startY);
+    fxLayer.addChild(token);
+    const color = SYMBOL_COLORS[collector];
+    void runner
+      .animate(620, (p) => {
+        const eased = Easing.inOutQuad(p);
+        const arc = Math.sin(p * Math.PI) * 62;
+        token.position.set(startX + (targetX - startX) * eased, startY + (targetY - startY) * eased - arc);
+        token.rotation += 0.09;
+        token.alpha = p > 0.82 ? 1 - (p - 0.82) / 0.18 : 1;
+        if (Math.floor(p * 10) !== Math.floor((p - 0.02) * 10)) spawnCollectorTrailMote(collector, token.position.x, token.position.y, Math.floor(p * 10));
+      })
+      .then(() => {
+        token.destroy();
+        potBadge.pulse(color);
+      });
+  }
+
   function spawnBurstParticles(targets: readonly { x: number; y: number; symbol: SymbolType }[]) {
     for (const { x, y, symbol } of targets) {
       const color = SYMBOL_COLORS[symbol];
@@ -715,23 +933,31 @@ function buildWorld(app: Application): BoardWorld {
     for (const route of routes) {
       if (gen !== currentGeneration) return;
       const origin = cellAt(route.x, route.y);
+      await runner.animate(190, (p) => {
+        const anticipation = Math.sin(p * Math.PI);
+        origin.container.scale.set(1 + anticipation * 0.1);
+        origin.glow.alpha = 0.55 + anticipation * 0.45;
+      });
+      origin.container.scale.set(1);
       hideCellSymbolVisualState(origin);
 
       const mover = new Container();
       const aura = new Graphics()
+        .circle(0, 0, CELL * 0.46)
+        .stroke({ width: 7, color: SYMBOL_COLORS[route.symbol], alpha: 0.16 })
         .circle(0, 0, CELL * 0.42)
-        .stroke({ width: 3, color: SYMBOL_COLORS[route.symbol], alpha: 0.7 });
+        .stroke({ width: 3, color: SYMBOL_COLORS[route.symbol], alpha: 0.86 });
       const shadow = new Sprite(getSymbolTexture(route.symbol));
       shadow.anchor.set(0.5);
       shadow.tint = 0x000000;
       shadow.alpha = 0.3;
-      shadow.width = CELL * 0.8;
-      shadow.height = CELL * 0.8;
+      shadow.width = CELL * 0.9;
+      shadow.height = CELL * 0.9;
       shadow.position.set(3, 6);
       const icon = new Sprite(getSymbolTexture(route.symbol));
       icon.anchor.set(0.5);
-      icon.width = CELL * 0.8;
-      icon.height = CELL * 0.8;
+      icon.width = CELL * 0.9;
+      icon.height = CELL * 0.9;
       mover.addChild(aura, shadow, icon);
       const [originX, originY] = cellCenter(route.x, route.y);
       mover.position.set(originX, originY);
@@ -741,11 +967,18 @@ function buildWorld(app: Application): BoardWorld {
         const [targetX, targetY] = cellCenter(x, y);
         const startX = mover.position.x;
         const startY = mover.position.y;
+        let trailIndex = 0;
         await runner.animate(
           duration,
           (p) => {
             mover.position.set(startX + (targetX - startX) * p, startY + (targetY - startY) * p);
-            mover.rotation = Math.sin(p * Math.PI) * 0.08 * Math.sign(targetX - startX || 1);
+            mover.rotation = Math.sin(p * Math.PI) * 0.1 * Math.sign(targetX - startX || 1);
+            aura.rotation += 0.025;
+            const nextTrailIndex = Math.floor(p * 5);
+            if (nextTrailIndex > trailIndex) {
+              trailIndex = nextTrailIndex;
+              spawnCollectorTrailMote(route.symbol, mover.position.x, mover.position.y, trailIndex);
+            }
           },
           Easing.inOutQuad
         );
@@ -754,30 +987,46 @@ function buildWorld(app: Application): BoardWorld {
 
       try {
         for (const move of route.moves) {
-          await moveTo(move.x, move.y, 180);
+          await moveTo(move.x, move.y, 225);
           if (gen !== currentGeneration) return;
           if (!move.collect) continue;
 
           const target = cellAt(move.x, move.y);
           const targetSymbol = prevBoard[move.y * COLS + move.x].symbol;
+          wildwoodSound.playCollectorImpact(route.symbol);
           spawnBurstParticles([{ x: move.x, y: move.y, symbol: targetSymbol }]);
-          spawnRingPulse(move.x, move.y, SYMBOL_COLORS[targetSymbol], { size: CELL * 1.3, duration: 420, alpha: 0.85 });
-          spawnRingPulse(route.x, route.y, SYMBOL_COLORS[route.symbol], { size: CELL, duration: 320, alpha: 0.45 });
+          spawnRingPulse(move.x, move.y, SYMBOL_COLORS[targetSymbol], { size: CELL * 1.45, duration: 480, alpha: 0.92 });
+          spawnRingPulse(route.x, route.y, SYMBOL_COLORS[route.symbol], { size: CELL, duration: 340, alpha: 0.5 });
+          spawnValueFly(move.x, move.y, targetSymbol, route.symbol);
+          if (presentationLevel >= 3 || bonusPresentation) shakeScreen(1.5 + presentationLevel * 0.35, 130);
+          target.motionLocked = true;
+          await runner.wait(55);
 
-          await runner.animate(150, (p) => {
+          await runner.animate(210, (p) => {
             const bounce = Math.sin(p * Math.PI);
-            mover.scale.set(1 + bounce * 0.18);
-            target.container.scale.set(1 + bounce * 0.16);
+            const targetScale = targetSymbol === "spiritSeed" ? 1 + bounce * 0.2 : Math.max(0.08, 1 - Easing.inQuad(p) * 0.92);
+            mover.scale.set(1 + bounce * 0.2);
+            target.symbolSprite.scale.set(target.baseSymbolScaleX * targetScale, target.baseSymbolScaleY * targetScale);
+            target.shadowSprite.scale.set(target.baseShadowScaleX * targetScale, target.baseShadowScaleY * targetScale);
+            target.symbolSprite.alpha = targetSymbol === "spiritSeed" ? 1 : 1 - p;
+            target.valueLabel.alpha = targetSymbol === "spiritSeed" ? 1 : 1 - p;
           });
           mover.scale.set(1);
-          target.container.scale.set(1);
 
-          if (targetSymbol !== "spiritSeed") hideCellSymbolVisualState(target);
+          if (targetSymbol !== "spiritSeed") {
+            hideCellSymbolVisualState(target);
+          } else {
+            target.symbolSprite.alpha = 1;
+            target.symbolSprite.scale.set(target.baseSymbolScaleX, target.baseSymbolScaleY);
+            target.shadowSprite.scale.set(target.baseShadowScaleX, target.baseShadowScaleY);
+            drawValueLabel(target);
+          }
+          target.motionLocked = false;
         }
 
         // Do not visibly retrace the cleared route. Fade the travelling
         // collector at its final target, then restore the authoritative origin.
-        await runner.animate(170, (p) => {
+        await runner.animate(220, (p) => {
           mover.alpha = 1 - Easing.inQuad(p);
           mover.scale.set(1 - p * 0.14);
         });
@@ -850,6 +1099,7 @@ function buildWorld(app: Application): BoardWorld {
    * expanding color ring, like it was actually transformed rather than resized.
    */
   async function materializeCell(cell: CellView, symbol: SymbolType, gen: number) {
+    cell.motionLocked = true;
     const wasHidden = !cell.symbolSprite.visible;
     const previousSymbolScaleX = cell.symbolSprite.scale.x;
     const previousSymbolScaleY = cell.symbolSprite.scale.y;
@@ -910,6 +1160,7 @@ function buildWorld(app: Application): BoardWorld {
         restoreCellSymbolVisualState(cell);
         cell.symbolSprite.scale.set(targetSymbolScaleX, targetSymbolScaleY);
         cell.shadowSprite.scale.set(targetShadowScaleX, targetShadowScaleY);
+        cell.motionLocked = false;
       }
     }
   }
@@ -917,7 +1168,7 @@ function buildWorld(app: Application): BoardWorld {
   async function playRefill(step: WildwoodStep, gen: number) {
     const changes = step.changes ?? [];
     if (changes.length === 0) return;
-    wildwoodSound.playCascade();
+    wildwoodSound.playCascade(presentationLevel);
     const jobs = changes.map(({ x, y, symbol }) => {
       const cell = cellAt(x, y);
       const delay = (x + y) * 22 + Math.random() * 40;
@@ -1030,6 +1281,7 @@ function buildWorld(app: Application): BoardWorld {
     let seedHintShown = false;
 
     setCollectableValueMultiplier(1);
+    setPresentationLevel(0, false);
     runner.cancelAll();
     clearFx();
     setBonusTiles(false);
@@ -1065,14 +1317,26 @@ function buildWorld(app: Application): BoardWorld {
           potBadge.setAmount(potCash);
           potBadge.setSub(`Cascade ${cascadeCount}/${WILDWOOD_CONFIG.maxBaseCascades}`, "emerald");
           break;
-        case "cascade":
-          setCollectableValueMultiplier(getCascadeValueMultiplier(cascadeCount + 1));
+        case "cascade": {
+          const nextMultiplier = getCascadeValueMultiplier(cascadeCount + 1);
+          await animateCollectableValueIncrease(
+            nextMultiplier,
+            myGeneration,
+            "COLLECTABLES +50%",
+            `CASCADE ${cascadeCount + 1} · VALUES ×${nextMultiplier}`
+          );
+          if (myGeneration !== currentGeneration) return;
+          setPresentationLevel(cascadeCount, false);
+          wildwoodSound.playEscalation(cascadeCount);
+          if (cascadeCount >= 3) shakeScreen(2 + cascadeCount * 0.45, 180);
           await playRefill(step, myGeneration);
           if (myGeneration !== currentGeneration) return;
           setCollectorTargetPreview(round.steps[i + 1]);
           break;
+        }
         case "bonusTriggered":
           setCollectableValueMultiplier(1);
+          setPresentationLevel(5, true);
           wildwoodSound.playBonusTrigger();
           await playBonusFlash(myGeneration);
           if (myGeneration !== currentGeneration) return;
@@ -1097,7 +1361,13 @@ function buildWorld(app: Application): BoardWorld {
             potBadge.setAmount(potCash);
             if (seedsRewarded > 0) {
               multiplier += seedsRewarded;
-              setCollectableValueMultiplier(multiplier);
+              await animateCollectableValueIncrease(
+                multiplier,
+                myGeneration,
+                `SPIRIT POWER +${seedsRewarded}x`,
+                `ALL VALUES ×${multiplier}`
+              );
+              if (myGeneration !== currentGeneration) return;
               multiplierBadge.set(multiplier);
               wildwoodSound.playMultiplierUp();
             }
@@ -1201,6 +1471,7 @@ function buildWorld(app: Application): BoardWorld {
     }
 
     setBonusTiles(bonusActive);
+    setPresentationLevel(refillCount, bonusActive);
     const currentType = activeRound.steps[clamped]?.type;
     if (bonusActive) {
       multiplierBadge.show();
@@ -1246,30 +1517,60 @@ function buildWorld(app: Application): BoardWorld {
     app.ticker.remove(pulseTicker);
     app.ticker.remove(driftTicker);
     ambientField.destroy();
+    forestField.destroy();
     celebrationField.destroy();
     runner.destroy();
   }
 
   // Idle scene until the first round resolves.
   setBonusTiles(false);
+  setPresentationLevel(0, false);
   ambientField.setMode("idle");
   for (const cell of cells) cell.container.alpha = 0;
 
   return { resize, playRound, seek, skipToEnd, destroy };
 }
 
-/** A soft glass-dome rim light over every icon — bright top-left, dark bottom-right — for a uniform "polished token" finish regardless of the symbol's own art. */
+/** Full inset tile depth replaces the repeated half-circle overlay that made the grid look like generic UI. */
 function drawTileBevel(g: Graphics) {
-  const cx = CELL / 2;
-  const cy = CELL / 2;
-  const r = CELL * 0.41;
   g.clear();
-  g.arc(cx, cy, r, Math.PI * 1.05, Math.PI * 1.85).stroke({ width: 3, color: 0xffffff, alpha: 0.32, cap: "round" });
-  g.arc(cx, cy, r, Math.PI * 0.05, Math.PI * 0.85).stroke({ width: 3, color: 0x000000, alpha: 0.24, cap: "round" });
+  g.roundRect(5, 5, CELL - 10, CELL - 10, 19).stroke({ width: 1.5, color: 0xfff6df, alpha: 0.14 });
+  g.roundRect(8, 9, CELL - 16, CELL - 18, 16).stroke({ width: 2.5, color: 0x050806, alpha: 0.26 });
+  g.moveTo(16, 12).lineTo(CELL - 22, 12).stroke({ width: 2, color: 0xffffff, alpha: 0.1, cap: "round" });
+  g.moveTo(16, CELL - 11).lineTo(CELL - 22, CELL - 11).stroke({ width: 3, color: 0x000000, alpha: 0.2, cap: "round" });
+}
+
+function drawCellDepth(g: Graphics) {
+  g.clear();
+  g.roundRect(8, 8, CELL - 16, CELL - 16, 17).fill({ color: 0x020705, alpha: 0.08 });
+  g.roundRect(10, 11, CELL - 20, CELL - 22, 15).stroke({ width: 2, color: 0x000000, alpha: 0.18 });
+}
+
+function buildValueRiseCallout(headline: string, detail: string): Container {
+  const container = new Container();
+  const title = new Text({
+    text: headline,
+    style: new TextStyle({ fill: 0xfff1b8, fontSize: 19, fontWeight: "900", fontFamily: "system-ui, -apple-system, sans-serif", letterSpacing: 0.8 })
+  });
+  title.anchor.set(0.5);
+  title.position.set(0, -8);
+  const sub = new Text({
+    text: detail,
+    style: new TextStyle({ fill: 0xc7ffe5, fontSize: 11, fontWeight: "800", fontFamily: "system-ui, -apple-system, sans-serif", letterSpacing: 0.6 })
+  });
+  sub.anchor.set(0.5);
+  sub.position.set(0, 13);
+  const width = Math.max(230, title.width + 40, sub.width + 34);
+  const bg = new Graphics()
+    .roundRect(-width / 2, -27, width, 54, 18)
+    .fill({ color: 0x07160f, alpha: 0.92 })
+    .stroke({ width: 2, color: 0xf5c542, alpha: 0.7 });
+  container.addChild(bg, title, sub);
+  return container;
 }
 
 /** Carved-wood double-bevel border with a soft outer glow and faceted gem studs, framing the grid. */
-function drawBoardFrame(g: Graphics) {
+function drawBoardFrame(g: Graphics, level = 0, bonus = false) {
   const pad = 14;
   const x = -pad;
   const y = -pad;
@@ -1277,19 +1578,25 @@ function drawBoardFrame(g: Graphics) {
   const h = BOARD_H + pad * 2;
   g.clear();
 
+  const energy = Math.max(0, Math.min(1, level / 5));
+  const frameColor = bonus ? 0xf5c542 : lerpColor(0x8bd8b1, 0xe879f9, energy);
   // Soft glow halo, built from fading concentric strokes (Graphics has no blur filter).
-  for (let i = 3; i >= 1; i -= 1) {
-    g.roundRect(x - i * 2, y - i * 2, w + i * 4, h + i * 4, 26 + i * 2).stroke({ width: 3, color: 0xf5c542, alpha: 0.05 * i });
+  for (let i = 4; i >= 1; i -= 1) {
+    g.roundRect(x - i * 2, y - i * 2, w + i * 4, h + i * 4, 26 + i * 2).stroke({
+      width: 3,
+      color: frameColor,
+      alpha: (0.025 + energy * 0.035 + (bonus ? 0.025 : 0)) * i
+    });
   }
 
-  g.roundRect(x, y, w, h, 26).stroke({ width: 10, color: 0x1c130a, alpha: 0.9 });
-  g.roundRect(x + 6, y + 6, w - 12, h - 12, 22).stroke({ width: 3, color: 0xf0c876, alpha: 0.4 });
-  g.roundRect(x + 3, y + 3, w - 6, h - 6, 24).stroke({ width: 1.2, color: 0xffe9a8, alpha: 0.25 });
+  g.roundRect(x, y, w, h, 26).stroke({ width: 10, color: 0x1c130a, alpha: 0.94 });
+  g.roundRect(x + 6, y + 6, w - 12, h - 12, 22).stroke({ width: 3 + energy * 1.5, color: frameColor, alpha: 0.38 + energy * 0.3 });
+  g.roundRect(x + 3, y + 3, w - 6, h - 6, 24).stroke({ width: 1.2, color: 0xfff2c4, alpha: 0.23 + energy * 0.18 });
 
   const gemAt = (cx: number, cy: number, size: number) => {
     g.poly([cx, cy - size, cx + size, cy, cx, cy + size, cx - size, cy])
-      .fill({ color: 0xfff3d0, alpha: 0.95 })
-      .stroke({ width: 1.2, color: 0x8a5a12, alpha: 0.8 });
+      .fill({ color: bonus ? 0xfff3d0 : lerpColor(0xd8fff0, 0xffd6fa, energy), alpha: 0.95 })
+      .stroke({ width: 1.2, color: frameColor, alpha: 0.86 });
     g.poly([cx, cy - size * 0.4, cx + size * 0.35, cy, cx, cy + size * 0.4, cx - size * 0.35, cy]).fill({ color: 0xffffff, alpha: 0.55 });
   };
 
@@ -1298,6 +1605,16 @@ function drawBoardFrame(g: Graphics) {
   gemAt(x + 15, y + h - 15, 5.5);
   gemAt(x + w - 15, y + h - 15, 5.5);
   gemAt(x + w / 2, y - 2, 6.5);
+}
+
+function drawFrameEnergy(g: Graphics, level: number, bonus: boolean) {
+  g.clear();
+  if (level <= 0 && !bonus) return;
+  const pad = 18;
+  const energy = bonus ? 1 : Math.min(1, level / 5);
+  const color = bonus ? 0xf5c542 : lerpColor(0x34d399, 0xe879f9, energy);
+  g.roundRect(-pad, -pad, BOARD_W + pad * 2, BOARD_H + pad * 2, 30).stroke({ width: 4 + energy * 4, color, alpha: 0.18 + energy * 0.28 });
+  g.roundRect(-pad - 5, -pad - 5, BOARD_W + (pad + 5) * 2, BOARD_H + (pad + 5) * 2, 34).stroke({ width: 2, color: 0xffffff, alpha: 0.08 + energy * 0.12 });
 }
 
 function buildCellView(x: number, y: number): CellView {
@@ -1310,6 +1627,10 @@ function buildCellView(x: number, y: number): CellView {
   tileSprite.width = CELL;
   tileSprite.height = CELL;
   container.addChild(tileSprite);
+
+  const tileDepth = new Graphics();
+  drawCellDepth(tileDepth);
+  container.addChild(tileDepth);
 
   const glow = new Graphics();
   container.addChild(glow);
@@ -1341,8 +1662,8 @@ function buildCellView(x: number, y: number): CellView {
   const valueLabel = new Text({
     text: "",
     style: new TextStyle({
-      fill: 0xffffff,
-      fontSize: 13,
+      fill: 0xf8f1dc,
+      fontSize: 12,
       fontWeight: "800",
       fontFamily: "system-ui, -apple-system, sans-serif"
     })
@@ -1386,6 +1707,7 @@ function buildCellView(x: number, y: number): CellView {
     symbol: null,
     container,
     tileSprite,
+    tileDepth,
     glow,
     shadowSprite,
     symbolSprite,
@@ -1395,7 +1717,12 @@ function buildCellView(x: number, y: number): CellView {
     valueLabel,
     targetsBg,
     targetIcons,
-    targetsAnyLabel
+    targetsAnyLabel,
+    motionLocked: false,
+    baseSymbolScaleX: 1,
+    baseSymbolScaleY: 1,
+    baseShadowScaleX: 1,
+    baseShadowScaleY: 1
   };
 }
 
@@ -1496,6 +1823,19 @@ function buildPotBadge() {
         if (p < 1) requestAnimationFrame(bump);
       };
       requestAnimationFrame(bump);
+    },
+    pulse(color = 0xf5c542) {
+      container.scale.set(1.16);
+      bg.tint = color;
+      const start = performance.now();
+      const bump = () => {
+        const p = Math.min(1, (performance.now() - start) / 260);
+        container.scale.set(1.16 - 0.16 * Easing.outQuad(p));
+        bg.tint = lerpColor(color, 0xffffff, p);
+        if (p < 1) requestAnimationFrame(bump);
+        else bg.tint = 0xffffff;
+      };
+      requestAnimationFrame(bump);
     }
   };
 }
@@ -1564,6 +1904,7 @@ class ParticleField {
   private readonly particles: Array<{ sprite: Sprite; vx: number; vy: number; life: number; maxLife: number }> = [];
   private mode: ParticleMode = "off";
   private spawnTimer = 0;
+  private intensity = 1;
 
   constructor(
     private readonly ticker: Ticker,
@@ -1578,12 +1919,18 @@ class ParticleField {
     this.mode = mode;
   }
 
+  setIntensity(intensity: number) {
+    this.intensity = Math.max(0.25, Math.min(4, intensity));
+  }
+
   private readonly update = () => {
     if (this.mode !== "off") {
       this.spawnTimer -= this.ticker.deltaMS;
       if (this.spawnTimer <= 0) {
-        this.spawnTimer = this.mode === "celebrate" ? 26 : this.mode === "bonus" ? 200 : 520;
+        const baseInterval = this.mode === "celebrate" ? 26 : this.mode === "bonus" ? 200 : 520;
+        this.spawnTimer = baseInterval / this.intensity;
         this.spawn();
+        if (this.intensity >= 2.4 && Math.random() < 0.45) this.spawn();
       }
     }
     const step = this.ticker.deltaMS / 16.67;
@@ -1592,6 +1939,7 @@ class ParticleField {
       const t = p.life / p.maxLife;
       p.sprite.position.x += p.vx * step;
       p.sprite.position.y += p.vy * step;
+      p.sprite.rotation += 0.004 * step;
       p.sprite.alpha = t < 0.2 ? t / 0.2 : t > 0.8 ? (1 - t) / 0.2 : 1;
       if (t >= 1) {
         this.particles.splice(this.particles.indexOf(p), 1);

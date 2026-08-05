@@ -1,3 +1,5 @@
+import type { CollectorType } from "../wildwood";
+
 /**
  * Tiny synthesized SFX engine — no audio files, everything is oscillators and
  * gain envelopes. Browsers block audio before a user gesture, so `resume()`
@@ -97,9 +99,27 @@ class WildwoodSound {
     this.tone(scale[Math.min(streak, scale.length - 1)], { type: "triangle", duration: 0.22, gain: 0.11 });
   }
 
-  playCascade(): void {
-    this.noiseBurst({ duration: 0.28, gain: 0.045, frequency: 900 });
-    this.tone(220, { type: "sine", duration: 0.2, slideTo: 340, gain: 0.05 });
+  playCascade(level = 0): void {
+    const lift = Math.max(0, Math.min(5, level));
+    this.noiseBurst({ duration: 0.28, gain: 0.045 + lift * 0.006, frequency: 900 + lift * 120 });
+    this.tone(220 + lift * 26, { type: "sine", duration: 0.22, slideTo: 340 + lift * 42, gain: 0.05 + lift * 0.006 });
+  }
+
+  playValueRise(multiplier: number): void {
+    const lift = Math.max(0, Math.min(6, multiplier));
+    this.tone(440 + lift * 42, { type: "triangle", duration: 0.22, slideTo: 620 + lift * 58, gain: 0.075 });
+    this.tone(659.25 + lift * 32, { type: "sine", duration: 0.28, gain: 0.055, delay: 0.07 });
+  }
+
+  playEscalation(level: number): void {
+    const step = Math.max(0, Math.min(5, level));
+    this.tone(261.63 + step * 38, { type: "sawtooth", duration: 0.16, gain: 0.035 + step * 0.005 });
+  }
+
+  playCollectorImpact(symbol: CollectorType): void {
+    const frequency: Record<CollectorType, number> = { fox: 520, owl: 760, stag: 340, wisp: 920 };
+    this.tone(frequency[symbol], { type: symbol === "wisp" ? "sine" : "triangle", duration: 0.12, slideTo: frequency[symbol] * 1.18, gain: 0.055 });
+    this.noiseBurst({ duration: 0.1, gain: 0.022, frequency: frequency[symbol] * 1.4 });
   }
 
   playSeedHint(): void {
