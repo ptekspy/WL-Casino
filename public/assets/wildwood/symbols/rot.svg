@@ -1,0 +1,35 @@
+<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="badge" cx="38%" cy="30%" r="85%">
+      <stop offset="0%" stop-color="#8f8698"/>
+      <stop offset="35%" stop-color="#564a68"/>
+      <stop offset="72%" stop-color="#302341"/>
+      <stop offset="100%" stop-color="#120a1a"/>
+    </radialGradient>
+    <filter id="ds" x="-60%" y="-60%" width="220%" height="220%">
+      <feDropShadow dx="0" dy="3" stdDeviation="2.4" flood-color="#050208" flood-opacity="0.55"/>
+    </filter>
+    <radialGradient id="spore" cx="35%" cy="30%" r="80%">
+      <stop offset="0%" stop-color="#5c4f70"/>
+      <stop offset="100%" stop-color="#231a30"/>
+    </radialGradient>
+  </defs>
+  <path d="M64 8 L78 26 L104 20 L96 46 L118 60 L94 72 L102 98 L76 90 L64 116 L52 90 L26 98 L34 72 L10 60 L32 46 L24 20 L50 26 Z"
+        fill="url(#badge)" filter="url(#ds)" stroke="#1a1224" stroke-width="2" stroke-opacity="0.7"/>
+  <path d="M22 40 A 48 48 0 0 1 88 26" stroke="#c9bedd" stroke-width="3" stroke-linecap="round" opacity="0.18" fill="none"/>
+  <g filter="url(#ds)">
+    <ellipse cx="52" cy="58" rx="15" ry="11" fill="url(#spore)" transform="rotate(-12 52 58)"/>
+    <ellipse cx="80" cy="70" rx="13" ry="10" fill="url(#spore)" transform="rotate(18 80 70)"/>
+    <ellipse cx="62" cy="86" rx="10" ry="8" fill="url(#spore)"/>
+    <ellipse cx="49" cy="55" rx="5" ry="3" fill="#9c8fb2" opacity="0.4" transform="rotate(-12 49 55)"/>
+  </g>
+  <g fill="#7c6f92">
+    <circle cx="48" cy="54" r="2.4"/>
+    <circle cx="58" cy="62" r="1.8"/>
+    <circle cx="76" cy="66" r="2.2"/>
+    <circle cx="86" cy="74" r="1.6"/>
+    <circle cx="60" cy="84" r="1.8"/>
+    <circle cx="68" cy="90" r="1.4"/>
+  </g>
+  <path d="M40 44 L52 58 M92 50 L80 70 M46 92 L62 86" stroke="#0d0714" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+</svg>

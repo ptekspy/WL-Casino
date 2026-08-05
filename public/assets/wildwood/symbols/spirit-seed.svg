@@ -1,0 +1,40 @@
+<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="badge" cx="36%" cy="28%" r="88%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="28%" stop-color="#a5f3fc"/>
+      <stop offset="65%" stop-color="#0891b2"/>
+      <stop offset="100%" stop-color="#052e3b"/>
+    </radialGradient>
+    <linearGradient id="gem" x1="15%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="35%" stop-color="#a5f3fc"/>
+      <stop offset="70%" stop-color="#22d3ee"/>
+      <stop offset="100%" stop-color="#0e5d75"/>
+    </linearGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="5" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="ds" x="-60%" y="-60%" width="220%" height="220%">
+      <feDropShadow dx="0" dy="3" stdDeviation="2.6" flood-color="#010f14" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+  <polygon points="64,8 112,64 64,120 16,64" fill="url(#badge)" filter="url(#ds)"/>
+  <polygon points="64,8 112,64 64,120 16,64" fill="none" stroke="#e0fbff" stroke-width="1.5" opacity="0.4"/>
+  <g filter="url(#glow)">
+    <path d="M64 28 C84 46 88 68 64 102 C40 68 44 46 64 28 Z" fill="url(#gem)" stroke="#0a4a5c" stroke-width="2.5"/>
+    <path d="M64 28 L64 102 M48 52 L64 45 L80 52 M44 71 L64 63 L84 71" stroke="#0a4a5c" stroke-width="1.6" fill="none" opacity="0.55"/>
+    <path d="M64 28 L48 52 L44 71 L64 102" fill="#ffffff" opacity="0.16"/>
+    <ellipse cx="56" cy="46" rx="6" ry="11" fill="#ffffff" opacity="0.7"/>
+  </g>
+  <g fill="#e0fbff">
+    <circle cx="28" cy="38" r="2.4"/>
+    <circle cx="100" cy="44" r="2"/>
+    <circle cx="96" cy="90" r="2.2"/>
+    <circle cx="32" cy="86" r="1.6"/>
+  </g>
+</svg>

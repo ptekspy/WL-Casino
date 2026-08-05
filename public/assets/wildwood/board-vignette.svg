@@ -1,0 +1,24 @@
+<svg viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="38%" r="64%">
+      <stop offset="0%" stop-color="#1c4530"/>
+      <stop offset="35%" stop-color="#123524" stop-opacity="0.85"/>
+      <stop offset="65%" stop-color="#07160f" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#020805" stop-opacity="0.98"/>
+    </radialGradient>
+    <radialGradient id="dawn" cx="50%" cy="8%" r="45%">
+      <stop offset="0%" stop-color="#ffe8ad" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#ffe8ad" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="800" height="800" fill="url(#glow)"/>
+  <rect width="800" height="800" fill="url(#dawn)"/>
+  <g fill="#020a06" opacity="0.9">
+    <path d="M0 800 L0 640 L40 560 L60 620 L90 520 L120 610 L150 560 L170 640 L200 640 L200 800 Z"/>
+    <path d="M800 800 L800 620 L760 540 L735 600 L705 500 L675 600 L650 550 L630 640 L600 640 L600 800 Z"/>
+  </g>
+  <g fill="#020a06" opacity="0.7">
+    <path d="M0 800 L0 700 L25 660 L45 700 L70 650 L95 700 L110 800 Z"/>
+    <path d="M800 800 L800 700 L775 660 L755 700 L730 650 L705 700 L690 800 Z"/>
+  </g>
+</svg>

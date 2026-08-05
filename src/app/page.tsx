@@ -12,14 +12,15 @@ export default function Home() {
           <div className="max-w-3xl">
             <h1 className="text-4xl font-black tracking-tight text-white sm:text-6xl">Wildwood</h1>
             <p className="mt-4 text-lg leading-8 text-emerald-100/80">
-              Fresh 6×6 board every play. Collect 3 Spirit Seeds to enter the evolving Wildwood bonus.
-              The result is resolved server-side and returned as replay data.
+              Fresh 6×6 board every play. Collect {WILDWOOD_CONFIG.bonusTriggerSeeds} Spirit Seeds to enter the hold-and-win
+              Wildwood bonus, where collectors are held and the multiplier climbs. The result is resolved server-side and
+              returned as replay data.
             </p>
           </div>
           <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4 lg:min-w-[32rem]">
-            <Stat label="RTP target" value="95%" />
+            <Stat label="RTP target" value={`${(WILDWOOD_CONFIG.targetRtp * 100).toFixed(0)}%`} />
             <Stat label="Max win" value={`${WILDWOOD_CONFIG.maxWin}x`} />
-            <Stat label="Bonus" value="3 seeds" />
+            <Stat label="Bonus" value={`${WILDWOOD_CONFIG.bonusTriggerSeeds} seeds`} />
             <Stat label="Mode" value="Demo" />
           </dl>
         </div>

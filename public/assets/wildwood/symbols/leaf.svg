@@ -1,0 +1,35 @@
+<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="badge" cx="34%" cy="26%" r="85%">
+      <stop offset="0%" stop-color="#eafff3"/>
+      <stop offset="30%" stop-color="#6ee7b7"/>
+      <stop offset="68%" stop-color="#0f9e6e"/>
+      <stop offset="100%" stop-color="#054431"/>
+    </radialGradient>
+    <linearGradient id="leaf" x1="10%" y1="0%" x2="90%" y2="100%">
+      <stop offset="0%" stop-color="#f0fff8"/>
+      <stop offset="45%" stop-color="#5eead4"/>
+      <stop offset="100%" stop-color="#0d9488"/>
+    </linearGradient>
+    <linearGradient id="leafShade" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#054431" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#032e22" stop-opacity="0.55"/>
+    </linearGradient>
+    <filter id="ds" x="-60%" y="-60%" width="220%" height="220%">
+      <feDropShadow dx="0" dy="3" stdDeviation="2.6" flood-color="#01120c" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+  <circle cx="64" cy="64" r="54" fill="url(#badge)" filter="url(#ds)"/>
+  <path d="M20 42 A 48 48 0 0 1 92 30" stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity="0.28" fill="none"/>
+  <path d="M28 102 A 48 48 0 0 0 104 84" stroke="#012018" stroke-width="6" stroke-linecap="round" opacity="0.22" fill="none"/>
+  <g filter="url(#ds)">
+    <path d="M64 27 C94 44 96 90 64 106 C32 90 34 44 64 27 Z" fill="url(#leaf)" stroke="#04352a" stroke-width="2.5"/>
+    <path d="M64 27 C94 44 96 90 64 106 C58 88 58 46 64 27 Z" fill="url(#leafShade)"/>
+    <path d="M64 33 C64 56 64 78 64 99" stroke="#04352a" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.75"/>
+    <path d="M64 50 C56 57 50 61 45 65" stroke="#04352a" stroke-width="2.4" stroke-linecap="round" fill="none" opacity="0.6"/>
+    <path d="M64 50 C72 57 78 61 83 65" stroke="#04352a" stroke-width="2.4" stroke-linecap="round" fill="none" opacity="0.6"/>
+    <path d="M64 71 C57 77 52 80 47 84" stroke="#04352a" stroke-width="2.2" stroke-linecap="round" fill="none" opacity="0.55"/>
+    <path d="M64 71 C71 77 76 80 81 84" stroke="#04352a" stroke-width="2.2" stroke-linecap="round" fill="none" opacity="0.55"/>
+    <ellipse cx="52" cy="42" rx="8" ry="12" fill="#ffffff" opacity="0.35" transform="rotate(-20 52 42)"/>
+  </g>
+</svg>

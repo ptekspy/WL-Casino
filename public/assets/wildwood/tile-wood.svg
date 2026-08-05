@@ -1,0 +1,34 @@
+<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="face" cx="38%" cy="32%" r="80%">
+      <stop offset="0%" stop-color="#4a3320"/>
+      <stop offset="55%" stop-color="#2c1e12"/>
+      <stop offset="100%" stop-color="#160e08"/>
+    </radialGradient>
+    <linearGradient id="bevelLight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8a6a3f" stop-opacity="0.9"/>
+      <stop offset="45%" stop-color="#8a6a3f" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="bevelDark" x1="100%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0.75"/>
+      <stop offset="45%" stop-color="#000000" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="innerShadow" cx="50%" cy="50%" r="52%">
+      <stop offset="72%" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.6"/>
+    </radialGradient>
+  </defs>
+  <rect x="2" y="2" width="124" height="124" rx="20" fill="url(#face)" stroke="#0a0603" stroke-width="2"/>
+  <g stroke="#0f0904" stroke-width="1.1" opacity="0.4">
+    <path d="M8 30 Q64 25 120 30"/>
+    <path d="M8 98 Q64 103 120 98"/>
+    <path d="M12 64 Q64 59 116 64"/>
+    <path d="M8 46 Q64 42 120 46"/>
+    <path d="M8 82 Q64 86 120 82"/>
+  </g>
+  <rect x="2" y="2" width="124" height="124" rx="20" fill="url(#innerShadow)"/>
+  <rect x="2" y="2" width="124" height="124" rx="20" fill="none" stroke="url(#bevelLight)" stroke-width="4"/>
+  <rect x="2" y="2" width="124" height="124" rx="20" fill="none" stroke="url(#bevelDark)" stroke-width="4"/>
+  <rect x="7" y="7" width="114" height="114" rx="16" fill="none" stroke="#000000" stroke-opacity="0.5" stroke-width="1.5"/>
+  <ellipse cx="34" cy="26" rx="30" ry="14" fill="#ffe8bf" opacity="0.06"/>
+</svg>

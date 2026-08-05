@@ -1,0 +1,17 @@
+<svg viewBox="0 0 700 800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="beam1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#d9ffb0" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#d9ffb0" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="beam2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#bff3ff" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#bff3ff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <g>
+    <polygon points="120,0 220,0 90,620 -10,560" fill="url(#beam1)"/>
+    <polygon points="320,0 400,0 330,700 260,660" fill="url(#beam2)"/>
+    <polygon points="520,0 610,0 560,600 470,540" fill="url(#beam1)"/>
+  </g>
+</svg>

@@ -17,10 +17,10 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
-      - run: pnpm sim -- --runs 1000 --out reports/wildwood-smoke.md
+      - run: pnpm sim -- --runs 200000 --out reports/wildwood-smoke.md
       - run: pnpm build
       - uses: actions/upload-artifact@v4
         with:

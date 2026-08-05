@@ -1,0 +1,41 @@
+<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="badge" cx="34%" cy="26%" r="88%">
+      <stop offset="0%" stop-color="#fff0ff"/>
+      <stop offset="30%" stop-color="#f5d0fe"/>
+      <stop offset="68%" stop-color="#a21caf"/>
+      <stop offset="100%" stop-color="#3b0764"/>
+    </radialGradient>
+    <radialGradient id="core" cx="42%" cy="36%" r="65%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="45%" stop-color="#f0abfc"/>
+      <stop offset="100%" stop-color="#a21caf"/>
+    </radialGradient>
+    <linearGradient id="tendril" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbcfe8"/>
+      <stop offset="100%" stop-color="#c026d3"/>
+    </linearGradient>
+    <filter id="glow" x="-90%" y="-90%" width="280%" height="280%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="ds" x="-60%" y="-60%" width="220%" height="220%">
+      <feDropShadow dx="0" dy="3" stdDeviation="2.6" flood-color="#1a0026" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+  <polygon points="64,10 110.8,37 110.8,91 64,118 17.2,91 17.2,37" fill="url(#badge)" filter="url(#ds)"/>
+  <polygon points="64,10 110.8,37 110.8,91 64,118 17.2,91 17.2,37" fill="none" stroke="#fae8ff" stroke-width="1.5" opacity="0.4"/>
+  <g filter="url(#glow)">
+    <path d="M64 64 C38 50 32 26 48 14 C45 32 54 43 64 47 C74 43 83 32 80 14 C96 26 90 50 64 64 Z" fill="url(#tendril)" opacity="0.9"/>
+    <path d="M64 64 C44 71 33 88 42 106 C50 93 58 87 64 83 C70 87 78 93 86 106 C95 88 84 71 64 64 Z" fill="url(#tendril)" opacity="0.9"/>
+    <circle cx="64" cy="64" r="17" fill="url(#core)"/>
+    <circle cx="58" cy="58" r="5" fill="#ffffff" opacity="0.8"/>
+  </g>
+  <g fill="#fdf4ff">
+    <circle cx="32" cy="44" r="2.6"/>
+    <circle cx="98" cy="48" r="2.1"/>
+    <circle cx="92" cy="92" r="2.3"/>
+    <circle cx="38" cy="94" r="1.9"/>
+    <circle cx="64" cy="20" r="1.6"/>
+  </g>
+</svg>

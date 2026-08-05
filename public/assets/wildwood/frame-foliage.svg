@@ -1,0 +1,53 @@
+<svg viewBox="0 0 760 220" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="vine" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d3b28"/>
+      <stop offset="100%" stop-color="#031a10"/>
+    </linearGradient>
+    <linearGradient id="leaf" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3fae7d"/>
+      <stop offset="55%" stop-color="#137450"/>
+      <stop offset="100%" stop-color="#053824"/>
+    </linearGradient>
+    <radialGradient id="berry" cx="35%" cy="30%" r="80%">
+      <stop offset="0%" stop-color="#ffd0e0"/>
+      <stop offset="60%" stop-color="#ec4899"/>
+      <stop offset="100%" stop-color="#7a0f45"/>
+    </radialGradient>
+    <filter id="ds" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#ds)">
+    <!-- left cluster -->
+    <path d="M-10 -10 C20 20 30 55 24 95 C40 60 46 25 30 -10 Z" fill="url(#vine)"/>
+    <path d="M-10 -10 C10 30 8 70 -4 110 C14 78 22 35 14 -10 Z" fill="url(#vine)"/>
+    <g>
+      <path d="M18 40 C40 46 52 62 48 82 C34 74 20 60 18 40 Z" fill="url(#leaf)"/>
+      <path d="M2 66 C24 70 38 86 34 106 C20 100 4 86 2 66 Z" fill="url(#leaf)"/>
+      <path d="M22 92 C42 100 52 116 44 134 C30 126 18 112 22 92 Z" fill="url(#leaf)"/>
+      <path d="M-6 100 C12 108 20 124 10 140 C-2 132 -10 116 -6 100 Z" fill="url(#leaf)"/>
+      <path d="M6 130 C22 140 28 156 18 170 C6 162 0 146 6 130 Z" fill="url(#leaf)"/>
+    </g>
+    <circle cx="30" cy="70" r="5" fill="url(#berry)"/>
+    <circle cx="10" cy="118" r="4.5" fill="url(#berry)"/>
+    <circle cx="26" cy="150" r="4" fill="url(#berry)"/>
+
+    <!-- right cluster (mirrored) -->
+    <g transform="translate(760,0) scale(-1,1)">
+      <path d="M-10 -10 C20 20 30 55 24 95 C40 60 46 25 30 -10 Z" fill="url(#vine)"/>
+      <path d="M-10 -10 C10 30 8 70 -4 110 C14 78 22 35 14 -10 Z" fill="url(#vine)"/>
+      <g>
+        <path d="M18 40 C40 46 52 62 48 82 C34 74 20 60 18 40 Z" fill="url(#leaf)"/>
+        <path d="M2 66 C24 70 38 86 34 106 C20 100 4 86 2 66 Z" fill="url(#leaf)"/>
+        <path d="M22 92 C42 100 52 116 44 134 C30 126 18 112 22 92 Z" fill="url(#leaf)"/>
+        <path d="M-6 100 C12 108 20 124 10 140 C-2 132 -10 116 -6 100 Z" fill="url(#leaf)"/>
+        <path d="M6 130 C22 140 28 156 18 170 C6 162 0 146 6 130 Z" fill="url(#leaf)"/>
+      </g>
+      <circle cx="30" cy="70" r="5" fill="url(#berry)"/>
+      <circle cx="10" cy="118" r="4.5" fill="url(#berry)"/>
+      <circle cx="26" cy="150" r="4" fill="url(#berry)"/>
+    </g>
+  </g>
+</svg>
