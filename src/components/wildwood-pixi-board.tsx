@@ -813,8 +813,9 @@ function buildWorld(app: Application): BoardWorld {
   function spawnValueFly(x: number, y: number, symbol: SymbolType, collector: CollectorType) {
     const token = new Sprite(getSymbolTexture(symbol));
     token.anchor.set(0.5);
-    token.width = 24;
-    token.height = 24;
+    // Keep the collection-to-pot feedback readable without covering nearby tiles.
+    token.width = 18;
+    token.height = 18;
     token.tint = 0xffffff;
     const [startX, startY] = cellCenter(x, y);
     const targetX = potBadge.container.position.x - boardContainer.position.x;
