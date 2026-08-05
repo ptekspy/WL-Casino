@@ -36,6 +36,7 @@ type ActiveTween = {
 export class TweenRunner {
   private readonly tweens = new Set<ActiveTween>();
   private destroyed = false;
+  private timeScale = 1;
 
   constructor(private readonly ticker: Ticker) {
     this.ticker.add(this.tick);
@@ -43,7 +44,7 @@ export class TweenRunner {
 
   private readonly tick = () => {
     if (this.tweens.size === 0) return;
-    const dtMs = this.ticker.deltaMS;
+    const dtMs = this.ticker.deltaMS * this.timeScale;
     for (const tween of [...this.tweens]) {
       tween.elapsed += dtMs;
       const progress = tween.duration <= 0 ? 1 : Math.min(1, tween.elapsed / tween.duration);
@@ -64,6 +65,10 @@ export class TweenRunner {
 
   wait(ms: number): Promise<void> {
     return this.animate(ms, () => {});
+  }
+
+  setTimeScale(scale: number): void {
+    this.timeScale = Math.max(0.5, Math.min(2.5, scale));
   }
 
   /** Immediately stops every in-flight tween without running its final update — used when a seek interrupts autoplay. */
