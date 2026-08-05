@@ -30,14 +30,8 @@ jobs:
 
           path = Path("src/components/wildwood-pixi-board.tsx")
           source = path.read_text()
-          old = '''    // Keep the collection-to-pot feedback readable without covering nearby tiles.
-    token.width = 18;
-    token.height = 18;'''
-          new = '''    // The leaf artwork fills more of its texture than the other symbols, so it
-    // needs a smaller fly-up footprint while every other collection token stays unchanged.
-    const tokenSize = symbol === "leaf" ? 14 : 18;
-    token.width = tokenSize;
-    token.height = tokenSize;'''
+          old = "    // Keep the collection-to-pot feedback readable without covering nearby tiles.\n    token.width = 18;\n    token.height = 18;"
+          new = "    // The leaf artwork fills more of its texture than the other symbols, so it\n    // needs a smaller fly-up footprint while every other collection token stays unchanged.\n    const tokenSize = symbol === \"leaf\" ? 14 : 18;\n    token.width = tokenSize;\n    token.height = tokenSize;"
           if source.count(old) != 1:
               raise SystemExit(f"Expected exactly one fly-up size block, found {source.count(old)}")
           path.write_text(source.replace(old, new))
