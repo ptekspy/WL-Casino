@@ -29,7 +29,12 @@ jobs:
 
       - name: Rebuild and apply patch
         run: |
-          cat scripts/collector-route-parts/part-*.b64 | base64 --decode > scripts/apply-collector-routes.mjs
+          : > scripts/apply-collector-routes.mjs
+          for part in scripts/collector-route-parts/part-*.b64; do
+            echo "Decoding ${part}"
+            base64 --decode "${part}" >> scripts/apply-collector-routes.mjs
+          done
+          node --check scripts/apply-collector-routes.mjs
           node scripts/apply-collector-routes.mjs
 
       - name: Install dependencies
