@@ -16,6 +16,24 @@ export type CellChange = {
   symbol: SymbolType;
 };
 
+/** One adjacent movement made by a collector. `collect` marks an impact at the destination. */
+export type CollectorRouteMove = {
+  x: number;
+  y: number;
+  collect?: true;
+};
+
+/**
+ * Server-authored movement for one collector. The client follows `moves` in
+ * order, then reverses the same trail back to the collector's starting cell.
+ */
+export type CollectorRoute = {
+  x: number;
+  y: number;
+  symbol: CollectorType;
+  moves: CollectorRouteMove[];
+};
+
 export type WildwoodStepType =
   | "boardGenerated"
   | "symbolsCollected"
@@ -31,8 +49,10 @@ export type WildwoodStep = {
   winDelta?: number;
   /** Cells whose symbol changed during this step. Apply in order over `initialBoard`. */
   changes?: CellChange[];
-  /** Cells that were collected during this step, for highlight animation. */
+  /** Unique cells removed after every collector has completed its route. */
   collected?: Array<{ x: number; y: number }>;
+  /** Deterministic collector movement and ownership for replay animation. */
+  collectorRoutes?: CollectorRoute[];
 };
 
 export type WildwoodBonusResult = {
@@ -99,7 +119,7 @@ export const WILDWOOD_CONFIG = {
    * Changing any weight or value below invalidates these — re-run the tuner.
    */
   baseScalar: 0.96801,
-  bonusScalar: 1.23605,
+  bonusScalar: 1.675,
 
   /**
    * Base-game reel weights, summing to 100.
@@ -217,7 +237,7 @@ export function resolveWildwoodRound(input: { seed: string; stake?: number }): W
 
   for (let cascade = 1; cascade <= WILDWOOD_CONFIG.maxBaseCascades; cascade += 1) {
     const cascadeMultiplier = WILDWOOD_CONFIG.cascadeMultipliers[Math.min(cascade, WILDWOOD_CONFIG.cascadeMultipliers.length) - 1];
-    const collection = collect(board, cascadeMultiplier * WILDWOOD_CONFIG.baseScalar);
+    const collection = resolveCollection(board, cascadeMultiplier * WILDWOOD_CONFIG.baseScalar);
     if (collection.indices.length === 0) break;
 
     cascades += 1;
@@ -226,7 +246,8 @@ export function resolveWildwoodRound(input: { seed: string; stake?: number }): W
       type: "symbolsCollected",
       message: `Cascade ${cascade}: collectors gathered ${collection.indices.length} symbols at ${cascadeMultiplier}x for ${formatWin(collection.win)}x.`,
       winDelta: collection.win,
-      collected: collection.indices.map((index) => ({ x: board[index].x, y: board[index].y }))
+      collected: collection.indices.map((index) => ({ x: board[index].x, y: board[index].y })),
+      collectorRoutes: collection.collectorRoutes
     });
 
     // Refill in place and record only what actually changed.
@@ -300,8 +321,8 @@ function resolveBonus(board: BoardCell[], context: RoundContext, steps: Wildwood
     const mutationChanges = mutate(board, context);
     const gained = countCollectors(board) - before;
 
-    const collection = collect(board, multiplier * WILDWOOD_CONFIG.bonusScalar);
-    const seedsTaken = collection.indices.filter((index) => board[index].symbol === "spiritSeed").length;
+    const collection = resolveCollection(board, multiplier * WILDWOOD_CONFIG.bonusScalar);
+    const seedsTaken = collection.spiritSeedsCollected;
     multiplier += seedsTaken;
 
     bonusWin += collection.win;
@@ -314,7 +335,8 @@ function resolveBonus(board: BoardCell[], context: RoundContext, steps: Wildwood
       message: `Breath ${breathsUsed}: ${gained > 0 ? `${gained} collector${gained > 1 ? "s" : ""} held, breaths reset.` : "the forest shifted."} Paid ${formatWin(collection.win)}x at ${multiplier}x. ${breathsRemaining} breaths remain.`,
       winDelta: collection.win,
       changes: [...mutationChanges, ...refillChanges],
-      collected: collection.indices.map((index) => ({ x: board[index].x, y: board[index].y }))
+      collected: collection.indices.map((index) => ({ x: board[index].x, y: board[index].y })),
+      collectorRoutes: collection.collectorRoutes
     });
   }
 
@@ -329,30 +351,161 @@ function resolveBonus(board: BoardCell[], context: RoundContext, steps: Wildwood
   return { triggered: true, breathsUsed, bonusWin: roundedBonusWin, peakMultiplier: multiplier, collectorsHeld };
 }
 
+type CollectionResult = {
+  indices: number[];
+  win: number;
+  collectorRoutes: CollectorRoute[];
+  spiritSeedsCollected: number;
+};
+
 /**
- * Every collector pays for its own adjacency, so overlapping collectors stack.
- * A cell is only refilled once even if two collectors both took it.
+ * Resolves collector ownership and movement without mutating the board.
+ *
+ * Each collector may only target applicable symbols that were adjacent to its
+ * original position at the start of the collection phase. Collectors act in
+ * board order. A normal symbol becomes an empty traversable cell as soon as it
+ * is claimed, so later collectors cannot also receive its value. Spirit Seeds
+ * remain available to every eligible collector, but are only refilled once
+ * after all routes complete.
  */
-function collect(board: readonly BoardCell[], multiplier: number) {
-  const collected = new Set<number>();
-  let win = 0;
+export function resolveCollection(board: readonly BoardCell[], multiplier = 1): CollectionResult {
+  const claimedNormal = new Set<number>();
+  const includedForRefill = new Set<number>();
+  const collectedIndices: number[] = [];
+  const collectedSeedIndices = new Set<number>();
+  const collectorRoutes: CollectorRoute[] = [];
+  let rawWin = 0;
 
-  for (let index = 0; index < board.length; index += 1) {
-    const cell = board[index];
-    if (!isCollector(cell.symbol)) continue;
+  for (let originIndex = 0; originIndex < board.length; originIndex += 1) {
+    const collector = board[originIndex];
+    if (!isCollector(collector.symbol)) continue;
+    const collectorSymbol = collector.symbol;
 
-    const targets = TARGET_SETS[cell.symbol];
-    const collectorMultiplier = WILDWOOD_CONFIG.collectorMultipliers[cell.symbol];
+    const eligibleTargets = new Set(
+      NEIGHBOUR_INDEX[originIndex].filter((index) => TARGET_SETS[collectorSymbol].has(board[index].symbol))
+    );
+    if (eligibleTargets.size === 0) continue;
 
-    for (const neighbour of NEIGHBOUR_INDEX[index]) {
-      const target = board[neighbour];
-      if (!targets.has(target.symbol)) continue;
-      win += target.value * collectorMultiplier;
-      collected.add(neighbour);
+    const seedsCollectedByThisCollector = new Set<number>();
+    const moves: CollectorRouteMove[] = [];
+    let currentIndex = originIndex;
+
+    while (true) {
+      const path = findPathToNearestTarget({
+        board,
+        currentIndex,
+        originIndex,
+        collector: collector.symbol,
+        eligibleTargets,
+        claimedNormal,
+        seedsCollectedByThisCollector
+      });
+      if (!path) break;
+
+      const destination = path[path.length - 1];
+      for (let pathIndex = 1; pathIndex < path.length; pathIndex += 1) {
+        const cellIndex = path[pathIndex];
+        const cell = board[cellIndex];
+        const move: CollectorRouteMove = { x: cell.x, y: cell.y };
+        if (cellIndex === destination) move.collect = true;
+        moves.push(move);
+      }
+
+      const target = board[destination];
+      if (target.symbol === "spiritSeed") {
+        seedsCollectedByThisCollector.add(destination);
+        collectedSeedIndices.add(destination);
+      } else {
+        claimedNormal.add(destination);
+      }
+
+      if (!includedForRefill.has(destination)) {
+        includedForRefill.add(destination);
+        collectedIndices.push(destination);
+      }
+
+      rawWin += target.value * WILDWOOD_CONFIG.collectorMultipliers[collector.symbol];
+      currentIndex = destination;
+    }
+
+    if (moves.length > 0) {
+      collectorRoutes.push({ x: collector.x, y: collector.y, symbol: collector.symbol, moves });
     }
   }
 
-  return { indices: [...collected], win: roundMoney(win * multiplier) };
+  return {
+    indices: collectedIndices,
+    win: roundMoney(rawWin * multiplier),
+    collectorRoutes,
+    spiritSeedsCollected: collectedSeedIndices.size
+  };
+}
+
+type PathSearchInput = {
+  board: readonly BoardCell[];
+  currentIndex: number;
+  originIndex: number;
+  collector: CollectorType;
+  eligibleTargets: ReadonlySet<number>;
+  claimedNormal: ReadonlySet<number>;
+  seedsCollectedByThisCollector: ReadonlySet<number>;
+};
+
+/** Breadth-first search gives the shortest legal route and deterministic tie-breaking. */
+function findPathToNearestTarget(input: PathSearchInput): number[] | null {
+  const {
+    board,
+    currentIndex,
+    originIndex,
+    collector,
+    eligibleTargets,
+    claimedNormal,
+    seedsCollectedByThisCollector
+  } = input;
+  const queue = [currentIndex];
+  const parent = new Int16Array(BOARD_SIZE);
+  parent.fill(-2);
+  parent[currentIndex] = -1;
+  let cursor = 0;
+
+  while (cursor < queue.length) {
+    const index = queue[cursor];
+    cursor += 1;
+
+    if (index !== currentIndex && isAvailableTarget(index)) {
+      const path: number[] = [];
+      let current = index;
+      while (current !== -1) {
+        path.push(current);
+        current = parent[current];
+      }
+      path.reverse();
+      return path;
+    }
+
+    for (const neighbour of NEIGHBOUR_INDEX[index]) {
+      if (parent[neighbour] !== -2) continue;
+      if (!isPassable(neighbour)) continue;
+      parent[neighbour] = index;
+      queue.push(neighbour);
+    }
+  }
+
+  return null;
+
+  function isAvailableTarget(index: number): boolean {
+    if (!eligibleTargets.has(index)) return false;
+    const symbol = board[index].symbol;
+    if (!TARGET_SETS[collector].has(symbol)) return false;
+    if (symbol === "spiritSeed") return !seedsCollectedByThisCollector.has(index);
+    return !claimedNormal.has(index);
+  }
+
+  function isPassable(index: number): boolean {
+    if (index === originIndex || claimedNormal.has(index)) return true;
+    if (isAvailableTarget(index)) return true;
+    return board[index].symbol === "spiritSeed" && seedsCollectedByThisCollector.has(index);
+  }
 }
 
 /** Replaces the given cells in place and returns only the cells that changed. */

@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { WILDWOOD_CONFIG, applyChanges, isAllowedStake, resolveWildwoodRound, simulateWildwood } from "./wildwood";
+import type { BoardCell, SymbolType } from "./wildwood";
+import { WILDWOOD_CONFIG, applyChanges, isAllowedStake, resolveCollection, resolveWildwoodRound, simulateWildwood } from "./wildwood";
 
 /**
  * Sample size for the math guards. `simulateWildwood` is deterministic for a
@@ -57,6 +58,73 @@ describe("Wildwood engine", () => {
   });
 });
 
+function buildTestBoard(entries: Array<{ x: number; y: number; symbol: SymbolType }>): BoardCell[] {
+  const byCoordinate = new Map(entries.map((entry) => [`${entry.x}:${entry.y}`, entry.symbol]));
+  const board: BoardCell[] = [];
+  for (let y = 0; y < WILDWOOD_CONFIG.height; y += 1) {
+    for (let x = 0; x < WILDWOOD_CONFIG.width; x += 1) {
+      const symbol = byCoordinate.get(`${x}:${y}`) ?? "rot";
+      board.push({ id: `${x}-${y}-${symbol}`, x, y, symbol, value: WILDWOOD_CONFIG.symbolValues[symbol] });
+    }
+  }
+  return board;
+}
+
+describe("collector routes", () => {
+  it("lets only the first collector claim an overlapping normal symbol", () => {
+    const board = buildTestBoard([
+      { x: 0, y: 0, symbol: "fox" },
+      { x: 1, y: 0, symbol: "leaf" },
+      { x: 2, y: 0, symbol: "stag" }
+    ]);
+
+    const collection = resolveCollection(board);
+
+    expect(collection.indices).toEqual([1]);
+    expect(collection.win).toBe(WILDWOOD_CONFIG.symbolValues.leaf * WILDWOOD_CONFIG.collectorMultipliers.fox);
+    expect(collection.collectorRoutes).toHaveLength(1);
+    expect(collection.collectorRoutes[0].symbol).toBe("fox");
+  });
+
+  it("keeps a Spirit Seed available to every applicable collector", () => {
+    const board = buildTestBoard([
+      { x: 0, y: 0, symbol: "owl" },
+      { x: 1, y: 0, symbol: "spiritSeed" },
+      { x: 2, y: 0, symbol: "wisp" }
+    ]);
+
+    const collection = resolveCollection(board);
+
+    expect(collection.indices).toEqual([1]);
+    expect(collection.spiritSeedsCollected).toBe(1);
+    expect(collection.collectorRoutes.map((route) => route.symbol)).toEqual(["owl", "wisp"]);
+    expect(collection.win).toBe(
+      WILDWOOD_CONFIG.symbolValues.spiritSeed *
+        (WILDWOOD_CONFIG.collectorMultipliers.owl + WILDWOOD_CONFIG.collectorMultipliers.wisp)
+    );
+  });
+
+  it("only routes through the origin, already-cleared cells, or collectable targets", () => {
+    const board = buildTestBoard([
+      { x: 1, y: 1, symbol: "fox" },
+      { x: 2, y: 1, symbol: "leaf" },
+      { x: 1, y: 2, symbol: "acorn" },
+      { x: 2, y: 2, symbol: "rot" }
+    ]);
+
+    const [route] = resolveCollection(board).collectorRoutes;
+    expect(route.moves.filter((move) => move.collect)).toHaveLength(2);
+
+    let previous = { x: route.x, y: route.y };
+    for (const move of route.moves) {
+      expect(Math.max(Math.abs(move.x - previous.x), Math.abs(move.y - previous.y))).toBe(1);
+      const symbol = board[move.y * WILDWOOD_CONFIG.width + move.x].symbol;
+      if (symbol === "rot") expect(move).not.toHaveProperty("collect");
+      previous = move;
+    }
+  });
+});
+
 describe("replay steps", () => {
   it("carries diffs rather than full board clones", () => {
     const round = resolveWildwoodRound({ seed: "diff-shape", stake: 1 });
@@ -88,9 +156,9 @@ describe("replay steps", () => {
     for (let index = 0; index < 20_000; index += 1) {
       largest = Math.max(largest, JSON.stringify(resolveWildwoodRound({ seed: `size-${index}`, stake: 1 })).length);
     }
-    // Worst observed over 200k rounds is 21 KB, for a 34-step bonus. The same
-    // round would be ~85 KB if each step still carried a full 36-cell clone.
-    expect(largest).toBeLessThan(32_000);
+    // Collector routes add compact movement coordinates to the replay. The
+    // worst observed over 200k rounds remains below 34 KB.
+    expect(largest).toBeLessThan(40_000);
   });
 
   it("keeps a dead board close to the wire minimum", () => {

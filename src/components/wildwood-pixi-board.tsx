@@ -359,6 +359,24 @@ function buildWorld(app: Application): BoardWorld {
     cell.shadowSprite.visible = true;
     cell.shadowSprite.renderable = true;
     cell.shadowSprite.alpha = 0.32;
+    cell.glow.visible = true;
+    cell.valueBg.visible = true;
+    cell.valueLabel.visible = true;
+    cell.targetsBg.visible = true;
+    for (const icon of cell.targetIcons) icon.visible = false;
+    cell.targetsAnyLabel.visible = false;
+  }
+
+  function hideCellSymbolVisualState(cell: CellView) {
+    cell.symbolSprite.visible = false;
+    cell.shadowSprite.visible = false;
+    cell.glow.visible = false;
+    cell.valueBg.visible = false;
+    cell.valueLabel.visible = false;
+    cell.targetsBg.visible = false;
+    for (const icon of cell.targetIcons) icon.visible = false;
+    cell.targetsAnyLabel.visible = false;
+    cell.flash.clear();
   }
 
   function applyCellSymbol(cell: CellView, symbol: SymbolType) {
@@ -638,7 +656,94 @@ function buildWorld(app: Application): BoardWorld {
       .then(() => text.destroy());
   }
 
+  async function playCollectorRoutes(step: WildwoodStep, prevBoard: BoardCell[], gen: number, comboStreak: number, stake: number) {
+    const routes = step.collectorRoutes ?? [];
+    if (routes.length === 0) return;
+
+    if (step.winDelta) spawnWinText(step.winDelta * stake);
+    wildwoodSound.playCollect(comboStreak);
+
+    for (const route of routes) {
+      if (gen !== currentGeneration) return;
+      const origin = cellAt(route.x, route.y);
+      hideCellSymbolVisualState(origin);
+
+      const mover = new Container();
+      const aura = new Graphics()
+        .circle(0, 0, CELL * 0.42)
+        .stroke({ width: 3, color: SYMBOL_COLORS[route.symbol], alpha: 0.7 });
+      const shadow = new Sprite(getSymbolTexture(route.symbol));
+      shadow.anchor.set(0.5);
+      shadow.tint = 0x000000;
+      shadow.alpha = 0.3;
+      shadow.width = CELL * 0.8;
+      shadow.height = CELL * 0.8;
+      shadow.position.set(3, 6);
+      const icon = new Sprite(getSymbolTexture(route.symbol));
+      icon.anchor.set(0.5);
+      icon.width = CELL * 0.8;
+      icon.height = CELL * 0.8;
+      mover.addChild(aura, shadow, icon);
+      const [originX, originY] = cellCenter(route.x, route.y);
+      mover.position.set(originX, originY);
+      fxLayer.addChild(mover);
+
+      const moveTo = async (x: number, y: number, duration: number) => {
+        const [targetX, targetY] = cellCenter(x, y);
+        const startX = mover.position.x;
+        const startY = mover.position.y;
+        await runner.animate(
+          duration,
+          (p) => {
+            mover.position.set(startX + (targetX - startX) * p, startY + (targetY - startY) * p);
+            mover.rotation = Math.sin(p * Math.PI) * 0.08 * Math.sign(targetX - startX || 1);
+          },
+          Easing.inOutQuad
+        );
+        mover.rotation = 0;
+      };
+
+      try {
+        for (const move of route.moves) {
+          await moveTo(move.x, move.y, 150);
+          if (gen !== currentGeneration) return;
+          if (!move.collect) continue;
+
+          const target = cellAt(move.x, move.y);
+          const targetSymbol = prevBoard[move.y * COLS + move.x].symbol;
+          spawnBurstParticles([{ x: move.x, y: move.y, symbol: targetSymbol }]);
+          spawnRingPulse(move.x, move.y, SYMBOL_COLORS[targetSymbol], { size: CELL * 1.3, duration: 420, alpha: 0.85 });
+          spawnRingPulse(route.x, route.y, SYMBOL_COLORS[route.symbol], { size: CELL, duration: 320, alpha: 0.45 });
+
+          await runner.animate(130, (p) => {
+            const bounce = Math.sin(p * Math.PI);
+            mover.scale.set(1 + bounce * 0.18);
+            target.container.scale.set(1 + bounce * 0.16);
+          });
+          mover.scale.set(1);
+          target.container.scale.set(1);
+
+          if (targetSymbol !== "spiritSeed") hideCellSymbolVisualState(target);
+        }
+
+        const returnTrail = route.moves.slice(0, -1).reverse();
+        for (const move of returnTrail) {
+          await moveTo(move.x, move.y, 95);
+          if (gen !== currentGeneration) return;
+        }
+        await moveTo(route.x, route.y, 120);
+      } finally {
+        if (mover.parent) mover.destroy({ children: true });
+        if (gen === currentGeneration && !runner.isDestroyed) applyCellSymbol(origin, route.symbol);
+      }
+    }
+  }
+
   async function playCollect(step: WildwoodStep, prevBoard: BoardCell[], gen: number, comboStreak: number, stake: number) {
+    if (step.collectorRoutes?.length) {
+      await playCollectorRoutes(step, prevBoard, gen, comboStreak, stake);
+      return;
+    }
     const collected = step.collected ?? [];
     if (collected.length === 0) return;
     const collectedSet = new Set(collected.map((c) => coordKey(c.x, c.y)));
@@ -693,17 +798,20 @@ function buildWorld(app: Application): BoardWorld {
    * expanding color ring, like it was actually transformed rather than resized.
    */
   async function materializeCell(cell: CellView, symbol: SymbolType, gen: number) {
-    restoreCellSymbolVisualState(cell);
+    const wasHidden = !cell.symbolSprite.visible;
     const previousSymbolScaleX = cell.symbolSprite.scale.x;
     const previousSymbolScaleY = cell.symbolSprite.scale.y;
     const previousShadowScaleX = cell.shadowSprite.scale.x;
     const previousShadowScaleY = cell.shadowSprite.scale.y;
 
-    await runner.animate(120, (p) => {
-      const scale = 1 - Easing.inQuad(p);
-      cell.symbolSprite.scale.set(previousSymbolScaleX * scale, previousSymbolScaleY * scale);
-      cell.shadowSprite.scale.set(previousShadowScaleX * scale, previousShadowScaleY * scale);
-    });
+    if (!wasHidden) {
+      restoreCellSymbolVisualState(cell);
+      await runner.animate(120, (p) => {
+        const scale = 1 - Easing.inQuad(p);
+        cell.symbolSprite.scale.set(previousSymbolScaleX * scale, previousSymbolScaleY * scale);
+        cell.shadowSprite.scale.set(previousShadowScaleX * scale, previousShadowScaleY * scale);
+      });
+    }
     if (gen !== currentGeneration || runner.isDestroyed) return;
 
     applyCellSymbol(cell, symbol);
