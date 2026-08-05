@@ -190,12 +190,31 @@ export const WILDWOOD_CONFIG = {
     wisp: 3
   } satisfies Record<CollectorType, number>,
 
-  /** Applied to cascade N (1-indexed). Rewards chains without inflating the first hit. */
-  cascadeMultipliers: [1, 1.3, 1.7, 2.2, 3, 4] as const,
+  /** Collectable value rises by 50% on every successive base-game cascade. */
+  cascadeMultipliers: [1, 1.5, 2, 2.5, 3, 3.5] as const,
 
   /** Cells rerolled per bonus breath. Drives how fast breaths decay. */
   bonusRerollPerBreath: { min: 4, max: 8 }
 };
+
+/** Returns the authoritative collectable-value multiplier for a base-game cascade. */
+export function getCascadeValueMultiplier(cascade: number): number {
+  const safeCascade = Number.isFinite(cascade) ? Math.max(1, Math.floor(cascade)) : 1;
+  const index = Math.min(safeCascade, WILDWOOD_CONFIG.cascadeMultipliers.length) - 1;
+  return WILDWOOD_CONFIG.cascadeMultipliers[index];
+}
+
+/** Scales a symbol's displayed collectable value without applying internal RTP scalars. */
+export function getScaledCollectableValue(symbol: SymbolType, multiplier: number): number {
+  const safeMultiplier = Number.isFinite(multiplier) ? Math.max(0, multiplier) : 1;
+  return Number((WILDWOOD_CONFIG.symbolValues[symbol] * safeMultiplier).toFixed(6));
+}
+
+/** Keeps exact fractional values such as 0.0375x visible instead of rounding to 0.04x. */
+export function formatCollectableValueLabel(value: number): string {
+  const formatted = value.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+  return formatted + "x";
+}
 
 const { width, height } = WILDWOOD_CONFIG;
 const BOARD_SIZE = width * height;
@@ -239,7 +258,7 @@ export function resolveWildwoodRound(input: { seed: string; stake?: number }): W
   steps.push({ type: "boardGenerated", message: "Fresh 6×6 board generated." });
 
   for (let cascade = 1; cascade <= WILDWOOD_CONFIG.maxBaseCascades; cascade += 1) {
-    const cascadeMultiplier = WILDWOOD_CONFIG.cascadeMultipliers[Math.min(cascade, WILDWOOD_CONFIG.cascadeMultipliers.length) - 1];
+    const cascadeMultiplier = getCascadeValueMultiplier(cascade);
     const collection = resolveCollection(board, cascadeMultiplier * WILDWOOD_CONFIG.baseScalar);
     if (collection.collectorRoutes.length === 0) break;
 

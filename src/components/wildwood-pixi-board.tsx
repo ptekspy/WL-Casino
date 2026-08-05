@@ -3,7 +3,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Application, Container, Graphics, Sprite, Text, TextStyle, type Texture, type Ticker } from "pixi.js";
 import type { BoardCell, CollectorType, SymbolType, WildwoodRoundResult, WildwoodStep } from "@/lib/wildwood";
-import { WILDWOOD_CONFIG, buildFrames } from "@/lib/wildwood";
+import { WILDWOOD_CONFIG, buildFrames, formatCollectableValueLabel, getCascadeValueMultiplier, getScaledCollectableValue } from "@/lib/wildwood";
 import { WILDWOOD_TEXTURE_KEYS, getSymbolTexture, getWildwoodTexture, loadWildwoodAssets } from "@/lib/pixi/assets";
 import { Easing, TweenRunner } from "@/lib/pixi/tween";
 import { wildwoodSound } from "@/lib/pixi/sound";
@@ -294,6 +294,7 @@ function buildWorld(app: Application): BoardWorld {
       cells.push(cell);
     }
   }
+  let collectableValueMultiplier = 1;
 
   // Cinematic center spotlight — warms and focuses the middle of the grid.
   const spotlight = new Sprite(getWildwoodTexture(WILDWOOD_TEXTURE_KEYS.spotlight));
@@ -444,7 +445,9 @@ function buildWorld(app: Application): BoardWorld {
     }
     const symbol = cell.symbol;
     const isCollector = isCollectorSymbol(symbol);
-    const label = isCollector ? `${WILDWOOD_CONFIG.collectorMultipliers[symbol]}x` : `${WILDWOOD_CONFIG.symbolValues[symbol].toFixed(2)}x`;
+    const label = isCollector
+      ? `${WILDWOOD_CONFIG.collectorMultipliers[symbol]}x`
+      : formatCollectableValueLabel(getScaledCollectableValue(symbol, collectableValueMultiplier));
     cell.valueLabel.text = label;
     cell.valueLabel.style.fill = isCollector ? 0x2a1704 : 0xffffff;
     const halfWidth = cell.valueLabel.width / 2 + 7;
@@ -452,6 +455,14 @@ function buildWorld(app: Application): BoardWorld {
       .roundRect(CELL / 2 - halfWidth, CELL - 22, halfWidth * 2, 18, 9)
       .fill({ color: isCollector ? 0xf5c542 : 0x000000, alpha: isCollector ? 0.92 : 0.55 })
       .stroke({ width: 1, color: isCollector ? 0x8a5a12 : 0xffffff, alpha: isCollector ? 0.6 : 0.15 });
+  }
+
+  function setCollectableValueMultiplier(multiplier: number) {
+    collectableValueMultiplier = multiplier;
+    for (const cell of cells) {
+      if (!cell.symbol || cell.symbol === "rot" || isCollectorSymbol(cell.symbol)) continue;
+      drawValueLabel(cell);
+    }
   }
 
   function drawGlow(cell: CellView) {
@@ -1018,6 +1029,7 @@ function buildWorld(app: Application): BoardWorld {
     let seedsSeenSoFar = round.initialBoard.filter((cell) => cell.symbol === "spiritSeed").length;
     let seedHintShown = false;
 
+    setCollectableValueMultiplier(1);
     runner.cancelAll();
     clearFx();
     setBonusTiles(false);
@@ -1054,11 +1066,13 @@ function buildWorld(app: Application): BoardWorld {
           potBadge.setSub(`Cascade ${cascadeCount}/${WILDWOOD_CONFIG.maxBaseCascades}`, "emerald");
           break;
         case "cascade":
+          setCollectableValueMultiplier(getCascadeValueMultiplier(cascadeCount + 1));
           await playRefill(step, myGeneration);
           if (myGeneration !== currentGeneration) return;
           setCollectorTargetPreview(round.steps[i + 1]);
           break;
         case "bonusTriggered":
+          setCollectableValueMultiplier(1);
           wildwoodSound.playBonusTrigger();
           await playBonusFlash(myGeneration);
           if (myGeneration !== currentGeneration) return;
@@ -1083,6 +1097,7 @@ function buildWorld(app: Application): BoardWorld {
             potBadge.setAmount(potCash);
             if (seedsRewarded > 0) {
               multiplier += seedsRewarded;
+              setCollectableValueMultiplier(multiplier);
               multiplierBadge.set(multiplier);
               wildwoodSound.playMultiplierUp();
             }
@@ -1156,6 +1171,7 @@ function buildWorld(app: Application): BoardWorld {
     let bonusActive = false;
     let multiplier = 1;
     let cascadeCount = 0;
+    let refillCount = 0;
     let potCash = 0;
     let seedsSeenSoFar = activeRound.initialBoard.filter((cell) => cell.symbol === "spiritSeed").length;
     let breathInfo: { n: number; remain: number } | null = null;
@@ -1166,6 +1182,7 @@ function buildWorld(app: Application): BoardWorld {
         potCash += (step.winDelta ?? 0) * stake;
       }
       if (step.type === "cascade") {
+        refillCount += 1;
         seedsSeenSoFar += (step.changes ?? []).filter((c) => c.symbol === "spiritSeed").length;
       }
       if (step.type === "bonusTriggered") {
@@ -1205,6 +1222,7 @@ function buildWorld(app: Application): BoardWorld {
     }
     seedTracker.setProgress(Math.min(seedsSeenSoFar, WILDWOOD_CONFIG.bonusTriggerSeeds));
     seedTracker.container.visible = !bonusActive && currentType !== "roundEnded" && currentType !== undefined;
+    setCollectableValueMultiplier(bonusActive ? multiplier : getCascadeValueMultiplier(refillCount + 1));
     setBoardInstant(board);
     setStatus(activeRound.steps[clamped]?.message ?? "");
     celebrationField.setMode("off");
