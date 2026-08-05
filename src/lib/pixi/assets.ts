@@ -3,27 +3,34 @@ import type { SymbolType } from "@/lib/wildwood";
 
 const ASSET_BASE = "/assets/wildwood";
 
+/**
+ * Filename (including extension) per symbol, relative to `symbols/`.
+ * Every symbol now ships as an AI-generated portrait, pre-cropped to the
+ * shape that already carries meaning on the board — circle for resources,
+ * hexagon for collectors, diamond for the bonus-trigger seed, and a jagged
+ * outline for rot — with real alpha baked in by scripts/process-*.mjs.
+ */
 const SYMBOL_FILE: Record<SymbolType, string> = {
-  leaf: "leaf",
-  acorn: "acorn",
-  mushroom: "mushroom",
-  bloom: "bloom",
-  root: "root",
-  rot: "rot",
-  spiritSeed: "spirit-seed",
-  fox: "fox",
-  owl: "owl",
-  stag: "stag",
-  wisp: "wisp"
+  leaf: "leaf.png",
+  acorn: "acorn.png",
+  mushroom: "mushroom.png",
+  bloom: "bloom.png",
+  root: "root.png",
+  rot: "rot.png",
+  spiritSeed: "spirit-seed.png",
+  fox: "fox.png",
+  owl: "owl.png",
+  stag: "stag.png",
+  wisp: "wisp.png"
 };
 
 export const SYMBOL_ALIASES = Object.fromEntries(
   (Object.keys(SYMBOL_FILE) as SymbolType[]).map((symbol) => [symbol, `symbol-${symbol}`])
 ) as Record<SymbolType, string>;
 
-/** Source paths for the raw SVG icons, for use in plain DOM `<img>` contexts (e.g. a legend). */
+/** Source paths for the raw icon files, for use in plain DOM `<img>` contexts (e.g. a legend). */
 export const SYMBOL_ICON_SRC = Object.fromEntries(
-  (Object.keys(SYMBOL_FILE) as SymbolType[]).map((symbol) => [symbol, `${ASSET_BASE}/symbols/${SYMBOL_FILE[symbol]}.svg`])
+  (Object.keys(SYMBOL_FILE) as SymbolType[]).map((symbol) => [symbol, `${ASSET_BASE}/symbols/${SYMBOL_FILE[symbol]}`])
 ) as Record<SymbolType, string>;
 
 export const WILDWOOD_TEXTURE_KEYS = {
@@ -49,8 +56,9 @@ export function loadWildwoodAssets(): Promise<void> {
     const assets = [
       ...(Object.keys(SYMBOL_FILE) as SymbolType[]).map((symbol) => ({
         alias: SYMBOL_ALIASES[symbol],
-        src: `${ASSET_BASE}/symbols/${SYMBOL_FILE[symbol]}.svg`,
-        data: { resolution: 2 }
+        src: `${ASSET_BASE}/symbols/${SYMBOL_FILE[symbol]}`,
+        // Only SVGs need a rasterization-resolution hint; the collector PNGs are already raster.
+        data: SYMBOL_FILE[symbol].endsWith(".svg") ? { resolution: 2 } : undefined
       })),
       { alias: WILDWOOD_TEXTURE_KEYS.tile, src: `${ASSET_BASE}/tile-wood.svg`, data: { resolution: 2 } },
       { alias: WILDWOOD_TEXTURE_KEYS.tileBonus, src: `${ASSET_BASE}/tile-wood-bonus.svg`, data: { resolution: 2 } },
