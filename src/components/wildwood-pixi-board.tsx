@@ -813,9 +813,11 @@ function buildWorld(app: Application): BoardWorld {
   function spawnValueFly(x: number, y: number, symbol: SymbolType, collector: CollectorType) {
     const token = new Sprite(getSymbolTexture(symbol));
     token.anchor.set(0.5);
-    // Keep the collection-to-pot feedback readable without covering nearby tiles.
-    token.width = 18;
-    token.height = 18;
+    // The leaf artwork fills more of its texture than the other symbols, so it
+    // needs a smaller fly-up footprint while every other collection token stays unchanged.
+    const tokenSize = symbol === "leaf" ? 14 : 18;
+    token.width = tokenSize;
+    token.height = tokenSize;
     token.tint = 0xffffff;
     const [startX, startY] = cellCenter(x, y);
     const targetX = potBadge.container.position.x - boardContainer.position.x;
