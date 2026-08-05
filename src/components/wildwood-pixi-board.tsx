@@ -464,6 +464,44 @@ function buildWorld(app: Application): BoardWorld {
     }
   }
 
+  /**
+   * Preview server-authored ownership before collection begins. Normal targets
+   * get one full ring in their owning collector's colour. Spirit Seeds are the
+   * only shared target, so they can show multiple concentric collector rings.
+   */
+  function setCollectorTargetPreview(step: WildwoodStep | undefined) {
+    for (const cell of cells) drawGlow(cell);
+
+    const collectorsByTarget = new Map<string, CollectorType[]>();
+    for (const route of step?.collectorRoutes ?? []) {
+      for (const move of route.moves) {
+        if (!move.collect) continue;
+        const key = coordKey(move.x, move.y);
+        const collectors = collectorsByTarget.get(key) ?? [];
+        if (!collectors.includes(route.symbol)) collectors.push(route.symbol);
+        collectorsByTarget.set(key, collectors);
+      }
+    }
+
+    for (const [key, collectors] of collectorsByTarget) {
+      const [x, y] = key.split(":").map(Number);
+      const cell = cellAt(x, y);
+      cell.glow.clear();
+      collectors.slice(0, 4).forEach((collector, index) => {
+        const radius = CELL * (0.47 - index * 0.045);
+        cell.glow.circle(CELL / 2, CELL / 2, radius).stroke({
+          width: 3,
+          color: SYMBOL_COLORS[collector],
+          alpha: 0.88
+        });
+      });
+    }
+  }
+
+  function clearCollectorTargetPreview() {
+    for (const cell of cells) drawGlow(cell);
+  }
+
   function setBonusTiles(active: boolean) {
     const texture = getWildwoodTexture(active ? WILDWOOD_TEXTURE_KEYS.tileBonus : WILDWOOD_TEXTURE_KEYS.tile);
     for (const cell of cells) cell.tileSprite.texture = texture;
@@ -998,6 +1036,7 @@ function buildWorld(app: Application): BoardWorld {
         case "boardGenerated":
           await playIntro(prev, myGeneration);
           if (myGeneration !== currentGeneration) return;
+          setCollectorTargetPreview(round.steps[i + 1]);
           potBadge.setAmount(0);
           potBadge.setSub(`Cascade 0/${WILDWOOD_CONFIG.maxBaseCascades}`, "emerald");
           potBadge.show();
@@ -1006,15 +1045,18 @@ function buildWorld(app: Application): BoardWorld {
           break;
         case "symbolsCollected":
           await playCollect(step, prev, myGeneration, comboStreak, stake);
+          if (myGeneration !== currentGeneration) return;
+          clearCollectorTargetPreview();
           comboStreak += 1;
           cascadeCount += 1;
-          if (myGeneration !== currentGeneration) return;
           potCash += (step.winDelta ?? 0) * stake;
           potBadge.setAmount(potCash);
           potBadge.setSub(`Cascade ${cascadeCount}/${WILDWOOD_CONFIG.maxBaseCascades}`, "emerald");
           break;
         case "cascade":
           await playRefill(step, myGeneration);
+          if (myGeneration !== currentGeneration) return;
+          setCollectorTargetPreview(round.steps[i + 1]);
           break;
         case "bonusTriggered":
           wildwoodSound.playBonusTrigger();
@@ -1030,9 +1072,13 @@ function buildWorld(app: Application): BoardWorld {
         case "bonusBreath": {
           if (step.collectorRoutes?.length || step.collected?.length) {
             const seedsRewarded = step.spiritSeedsRewarded?.length ?? 0;
-            await playCollect(step, prev, myGeneration, comboStreak, stake);
-            comboStreak += 1;
+            setCollectorTargetPreview(step);
+            await runner.wait(220);
             if (myGeneration !== currentGeneration) return;
+            await playCollect(step, prev, myGeneration, comboStreak, stake);
+            if (myGeneration !== currentGeneration) return;
+            clearCollectorTargetPreview();
+            comboStreak += 1;
             potCash += (step.winDelta ?? 0) * stake;
             potBadge.setAmount(potCash);
             if (seedsRewarded > 0) {
