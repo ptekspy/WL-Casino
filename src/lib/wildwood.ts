@@ -121,8 +121,8 @@ export const WILDWOOD_CONFIG = {
    * Global payout scalars, resolved numerically by `pnpm sim --tune`.
    * Changing any weight or value below invalidates these — re-run the tuner.
    */
-  baseScalar: 0.82242,
-  bonusScalar: 0.19019,
+  baseScalar: 0.8311,
+  bonusScalar: 0.2145,
 
   /**
    * Base-game reel weights, summing to 100.
