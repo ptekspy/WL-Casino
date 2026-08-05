@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm sim -- --runs 1000 --out reports/wildwood-smoke.md
+      - run: pnpm build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wildwood-smoke-report
+          path: reports/wildwood-smoke.md
