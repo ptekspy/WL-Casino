@@ -24,8 +24,9 @@ export type CollectorRouteMove = {
 };
 
 /**
- * Server-authored movement for one collector. The client follows `moves` in
- * order, then reverses the same trail back to the collector's starting cell.
+ * Server-authored collection movement for one collector. The client follows
+ * `moves` in order, then restores the collector at its starting cell without
+ * visibly retracing already-cleared squares.
  */
 export type CollectorRoute = {
   x: number;
@@ -49,8 +50,10 @@ export type WildwoodStep = {
   winDelta?: number;
   /** Cells whose symbol changed during this step. Apply in order over `initialBoard`. */
   changes?: CellChange[];
-  /** Unique cells removed after every collector has completed its route. */
+  /** Unique normal cells removed after every collector has completed its route. */
   collected?: Array<{ x: number; y: number }>;
+  /** Persistent Spirit Seeds rewarded during this step. They are never removed. */
+  spiritSeedsRewarded?: Array<{ x: number; y: number }>;
   /** Deterministic collector movement and ownership for replay animation. */
   collectorRoutes?: CollectorRoute[];
 };
@@ -118,8 +121,8 @@ export const WILDWOOD_CONFIG = {
    * Global payout scalars, resolved numerically by `pnpm sim --tune`.
    * Changing any weight or value below invalidates these — re-run the tuner.
    */
-  baseScalar: 0.96801,
-  bonusScalar: 1.675,
+  baseScalar: 0.82242,
+  bonusScalar: 0.19019,
 
   /**
    * Base-game reel weights, summing to 100.
@@ -238,19 +241,25 @@ export function resolveWildwoodRound(input: { seed: string; stake?: number }): W
   for (let cascade = 1; cascade <= WILDWOOD_CONFIG.maxBaseCascades; cascade += 1) {
     const cascadeMultiplier = WILDWOOD_CONFIG.cascadeMultipliers[Math.min(cascade, WILDWOOD_CONFIG.cascadeMultipliers.length) - 1];
     const collection = resolveCollection(board, cascadeMultiplier * WILDWOOD_CONFIG.baseScalar);
-    if (collection.indices.length === 0) break;
+    if (collection.collectorRoutes.length === 0) break;
 
+    const rewardedTargets = collection.indices.length + collection.spiritSeedIndices.length;
     cascades += 1;
     baseWin += collection.win;
     steps.push({
       type: "symbolsCollected",
-      message: `Cascade ${cascade}: collectors gathered ${collection.indices.length} symbols at ${cascadeMultiplier}x for ${formatWin(collection.win)}x.`,
+      message: `Cascade ${cascade}: collectors rewarded ${rewardedTargets} target${rewardedTargets === 1 ? "" : "s"} at ${cascadeMultiplier}x for ${formatWin(collection.win)}x.`,
       winDelta: collection.win,
       collected: collection.indices.map((index) => ({ x: board[index].x, y: board[index].y })),
+      spiritSeedsRewarded: collection.spiritSeedIndices.map((index) => ({ x: board[index].x, y: board[index].y })),
       collectorRoutes: collection.collectorRoutes
     });
 
-    // Refill in place and record only what actually changed.
+    // A persistent seed can pay on a turn, but it cannot create another turn by
+    // itself because the board did not change.
+    if (collection.indices.length === 0) break;
+
+    // Refill only removed normal symbols. Spirit Seeds remain on the board.
     const changes = refill(board, collection.indices, context, WILDWOOD_CONFIG.symbolWeights);
     spiritSeedsSeen += changes.filter((change) => change.symbol === "spiritSeed").length;
     steps.push({ type: "cascade", message: `Cascade ${cascade}: the forest refilled.`, changes });
@@ -336,6 +345,7 @@ function resolveBonus(board: BoardCell[], context: RoundContext, steps: Wildwood
       winDelta: collection.win,
       changes: [...mutationChanges, ...refillChanges],
       collected: collection.indices.map((index) => ({ x: board[index].x, y: board[index].y })),
+      spiritSeedsRewarded: collection.spiritSeedIndices.map((index) => ({ x: board[index].x, y: board[index].y })),
       collectorRoutes: collection.collectorRoutes
     });
   }
@@ -356,6 +366,7 @@ type CollectionResult = {
   win: number;
   collectorRoutes: CollectorRoute[];
   spiritSeedsCollected: number;
+  spiritSeedIndices: number[];
 };
 
 /**
@@ -365,12 +376,11 @@ type CollectionResult = {
  * original position at the start of the collection phase. Collectors act in
  * board order. A normal symbol becomes an empty traversable cell as soon as it
  * is claimed, so later collectors cannot also receive its value. Spirit Seeds
- * remain available to every eligible collector, but are only refilled once
- * after all routes complete.
+ * remain available to every eligible collector and persist unchanged after the
+ * collection phase, allowing them to pay again on a later cascade or breath.
  */
 export function resolveCollection(board: readonly BoardCell[], multiplier = 1): CollectionResult {
   const claimedNormal = new Set<number>();
-  const includedForRefill = new Set<number>();
   const collectedIndices: number[] = [];
   const collectedSeedIndices = new Set<number>();
   const collectorRoutes: CollectorRoute[] = [];
@@ -417,10 +427,6 @@ export function resolveCollection(board: readonly BoardCell[], multiplier = 1): 
         collectedSeedIndices.add(destination);
       } else {
         claimedNormal.add(destination);
-      }
-
-      if (!includedForRefill.has(destination)) {
-        includedForRefill.add(destination);
         collectedIndices.push(destination);
       }
 
@@ -437,7 +443,8 @@ export function resolveCollection(board: readonly BoardCell[], multiplier = 1): 
     indices: collectedIndices,
     win: roundMoney(rawWin * multiplier),
     collectorRoutes,
-    spiritSeedsCollected: collectedSeedIndices.size
+    spiritSeedsCollected: collectedSeedIndices.size,
+    spiritSeedIndices: [...collectedSeedIndices]
   };
 }
 
@@ -513,6 +520,9 @@ function refill(board: BoardCell[], indices: readonly number[], context: RoundCo
   const changes: CellChange[] = [];
   for (const index of indices) {
     const previous = board[index];
+    // Spirit Seeds are permanent once they have landed. Keep this defensive
+    // guard here so no current or future caller can accidentally overwrite one.
+    if (previous.symbol === "spiritSeed") continue;
     const symbol = pickSymbol(context.rng, weights);
     board[index] = createCell(previous.x, previous.y, symbol, context);
     changes.push({ x: previous.x, y: previous.y, symbol });
@@ -520,11 +530,12 @@ function refill(board: BoardCell[], indices: readonly number[], context: RoundCo
   return changes;
 }
 
-/** Rerolls every non-collector cell onto the bonus reel. */
+/** Rerolls every replaceable cell onto the bonus reel. Held collectors and persistent Spirit Seeds stay put. */
 function rerollAll(board: BoardCell[], context: RoundContext): CellChange[] {
   const indices: number[] = [];
   for (let index = 0; index < board.length; index += 1) {
-    if (!isCollector(board[index].symbol)) indices.push(index);
+    const symbol = board[index].symbol;
+    if (!isCollector(symbol) && symbol !== "spiritSeed") indices.push(index);
   }
   return refill(board, indices, context, WILDWOOD_CONFIG.bonusSymbolWeights);
 }
@@ -537,7 +548,7 @@ function mutate(board: BoardCell[], context: RoundContext): CellChange[] {
 
   for (let attempt = 0; attempt < count; attempt += 1) {
     const index = context.rng.int(0, BOARD_SIZE - 1);
-    if (isCollector(board[index].symbol)) continue; // held collectors are never overwritten
+    if (isCollector(board[index].symbol) || board[index].symbol === "spiritSeed") continue; // held collectors and seeds persist
     if (indices.includes(index)) continue;
     indices.push(index);
   }

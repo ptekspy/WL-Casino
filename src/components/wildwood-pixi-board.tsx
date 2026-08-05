@@ -705,7 +705,7 @@ function buildWorld(app: Application): BoardWorld {
 
       try {
         for (const move of route.moves) {
-          await moveTo(move.x, move.y, 150);
+          await moveTo(move.x, move.y, 180);
           if (gen !== currentGeneration) return;
           if (!move.collect) continue;
 
@@ -715,7 +715,7 @@ function buildWorld(app: Application): BoardWorld {
           spawnRingPulse(move.x, move.y, SYMBOL_COLORS[targetSymbol], { size: CELL * 1.3, duration: 420, alpha: 0.85 });
           spawnRingPulse(route.x, route.y, SYMBOL_COLORS[route.symbol], { size: CELL, duration: 320, alpha: 0.45 });
 
-          await runner.animate(130, (p) => {
+          await runner.animate(150, (p) => {
             const bounce = Math.sin(p * Math.PI);
             mover.scale.set(1 + bounce * 0.18);
             target.container.scale.set(1 + bounce * 0.16);
@@ -726,15 +726,18 @@ function buildWorld(app: Application): BoardWorld {
           if (targetSymbol !== "spiritSeed") hideCellSymbolVisualState(target);
         }
 
-        const returnTrail = route.moves.slice(0, -1).reverse();
-        for (const move of returnTrail) {
-          await moveTo(move.x, move.y, 95);
-          if (gen !== currentGeneration) return;
-        }
-        await moveTo(route.x, route.y, 120);
+        // Do not visibly retrace the cleared route. Fade the travelling
+        // collector at its final target, then restore the authoritative origin.
+        await runner.animate(170, (p) => {
+          mover.alpha = 1 - Easing.inQuad(p);
+          mover.scale.set(1 - p * 0.14);
+        });
       } finally {
         if (mover.parent) mover.destroy({ children: true });
-        if (gen === currentGeneration && !runner.isDestroyed) applyCellSymbol(origin, route.symbol);
+        if (gen === currentGeneration && !runner.isDestroyed) {
+          applyCellSymbol(origin, route.symbol);
+          spawnRingPulse(route.x, route.y, SYMBOL_COLORS[route.symbol], { size: CELL * 0.9, duration: 260, alpha: 0.35 });
+        }
       }
     }
   }
@@ -1025,15 +1028,15 @@ function buildWorld(app: Application): BoardWorld {
           await playBanner("WILDWOOD BONUS", "gold", 700, myGeneration);
           break;
         case "bonusBreath": {
-          if (step.collected?.length) {
-            const seedsTaken = step.collected.filter(({ x, y }) => prev[y * COLS + x].symbol === "spiritSeed").length;
+          if (step.collectorRoutes?.length || step.collected?.length) {
+            const seedsRewarded = step.spiritSeedsRewarded?.length ?? 0;
             await playCollect(step, prev, myGeneration, comboStreak, stake);
             comboStreak += 1;
             if (myGeneration !== currentGeneration) return;
             potCash += (step.winDelta ?? 0) * stake;
             potBadge.setAmount(potCash);
-            if (seedsTaken > 0) {
-              multiplier += seedsTaken;
+            if (seedsRewarded > 0) {
+              multiplier += seedsRewarded;
               multiplierBadge.set(multiplier);
               wildwoodSound.playMultiplierUp();
             }
@@ -1125,10 +1128,8 @@ function buildWorld(app: Application): BoardWorld {
       }
       if (step.type === "bonusEnded") bonusActive = false;
       if (step.type === "bonusBreath") {
-        if (step.collected?.length) {
-          const prev = i === 0 ? activeRound.initialBoard : frames[i - 1];
-          const seedsTaken = step.collected.filter(({ x, y }) => prev[y * COLS + x].symbol === "spiritSeed").length;
-          multiplier += seedsTaken;
+        if (step.collectorRoutes?.length || step.collected?.length) {
+          multiplier += step.spiritSeedsRewarded?.length ?? 0;
           potCash += (step.winDelta ?? 0) * stake;
         }
         breathInfo = parseBreathInfo(step.message) ?? breathInfo;
