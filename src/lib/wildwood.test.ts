@@ -106,6 +106,40 @@ describe("collector routes", () => {
     );
   });
 
+  it("allows only Spirit Seeds to be claimed by multiple collectors", () => {
+    const collectableSymbols: SymbolType[] = ["leaf", "acorn", "mushroom", "bloom", "root", "spiritSeed"];
+    const collectorPositions = [
+      { x: 1, y: 1 },
+      { x: 2, y: 1 },
+      { x: 3, y: 1 },
+      { x: 1, y: 2 }
+    ];
+    const collectorTypes = ["fox", "owl", "stag", "wisp"] as const;
+
+    for (const symbol of collectableSymbols) {
+      const applicableCollectors = collectorTypes.filter((collector) =>
+        (WILDWOOD_CONFIG.collectorTargets[collector] as readonly SymbolType[]).includes(symbol)
+      );
+      const board = buildTestBoard([
+        { x: 2, y: 2, symbol },
+        ...applicableCollectors.map((collector, index) => ({ ...collectorPositions[index], symbol: collector }))
+      ]);
+
+      const collection = resolveCollection(board);
+      const claimers = collection.collectorRoutes
+        .filter((route) => route.moves.some((move) => move.collect && move.x === 2 && move.y === 2))
+        .map((route) => route.symbol);
+
+      if (symbol === "spiritSeed") {
+        expect(new Set(claimers).size).toBe(applicableCollectors.length);
+        expect(collection.indices).not.toContain(2 * WILDWOOD_CONFIG.width + 2);
+      } else {
+        expect(claimers).toHaveLength(1);
+        expect(collection.indices).toContain(2 * WILDWOOD_CONFIG.width + 2);
+      }
+    }
+  });
+
   it("only routes through the origin, already-cleared cells, or collectable targets", () => {
     const board = buildTestBoard([
       { x: 1, y: 1, symbol: "fox" },
