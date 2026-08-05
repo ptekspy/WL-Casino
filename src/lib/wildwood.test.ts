@@ -9,9 +9,9 @@ import { WILDWOOD_CONFIG, applyChanges, isAllowedStake, resolveCollection, resol
  * 200k rounds the batch-to-batch spread of total RTP is about ±1.4pp, which is
  * why the total-RTP band below is wider than `rtpTolerance`.
  *
- * The authoritative figure comes from the tuner: over 3.2M rounds the engine
- * returns 95.19% (95% CI 94.50–95.88%), split 58.2% base / 37.3% bonus.
- * Re-run `pnpm sim:tune` after touching any weight or symbol value.
+ * Persistent Spirit Seeds materially affect both cascade and bonus tails.
+ * Re-run `pnpm sim:tune` after changing their lifecycle, any weight, or any
+ * symbol value, then validate the resolved scalars over a larger sample.
  */
 const MATH_RUNS = 200_000;
 const MATH_TIMEOUT = 60_000;
@@ -95,8 +95,10 @@ describe("collector routes", () => {
 
     const collection = resolveCollection(board);
 
-    expect(collection.indices).toEqual([1]);
+    expect(collection.indices).toEqual([]);
     expect(collection.spiritSeedsCollected).toBe(1);
+    expect(collection.spiritSeedIndices).toEqual([1]);
+    expect(board[1].symbol).toBe("spiritSeed");
     expect(collection.collectorRoutes.map((route) => route.symbol)).toEqual(["owl", "wisp"]);
     expect(collection.win).toBe(
       WILDWOOD_CONFIG.symbolValues.spiritSeed *
