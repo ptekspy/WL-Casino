@@ -29,7 +29,7 @@ export function SiteHeader() {
           {isPending ? (
             <div className="h-9 w-24 animate-pulse rounded-full bg-white/5" />
           ) : session ? (
-            <UserMenu name={session.user.name} email={session.user.email} balance={session.user.balance} />
+            <UserMenu name={session.user.name} email={session.user.email} balance={session.user.balance ?? 0} />
           ) : (
             <AuthButtons />
           )}

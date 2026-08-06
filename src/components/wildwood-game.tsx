@@ -6,10 +6,15 @@ import { WILDWOOD_CONFIG } from "@/lib/wildwood";
 import { SYMBOL_ICON_SRC } from "@/lib/pixi/assets";
 import { wildwoodSound } from "@/lib/pixi/sound";
 import { WILDWOOD_BOARD_ASPECT, WildwoodPixiBoard, type WildwoodBoardHandle } from "@/components/wildwood-pixi-board";
+import { authClient } from "@/lib/auth-client";
+import { formatCredits } from "@/lib/currency";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-async function playWildwood(stake: number): Promise<WildwoodRoundResult> {
+type WalletState = { balance: number; bonusSpinsRemaining: number; bonusSpinStake: number; isBonusSpin: boolean };
+type PlayResult = WildwoodRoundResult & { wallet?: WalletState };
+
+async function playWildwood(stake: number): Promise<PlayResult> {
   const response = await fetch("/api/wildwood/play", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -20,12 +25,15 @@ async function playWildwood(stake: number): Promise<WildwoodRoundResult> {
     const problem = (await response.json().catch(() => null)) as { error?: string } | null;
     throw new Error(problem?.error ?? "Wildwood failed to resolve.");
   }
-  return response.json() as Promise<WildwoodRoundResult>;
+  return response.json() as Promise<PlayResult>;
 }
 
 type StepInfo = { index: number; step: WildwoodStep; total: number };
 
 export function WildwoodGame() {
+  const { data: session, refetch: refetchSession } = authClient.useSession();
+  const isLoggedIn = Boolean(session);
+
   const [demoBalance, setDemoBalance] = useState(1000);
   const [stake, setStake] = useState(1);
   const [displayedWin, setDisplayedWin] = useState(0);
@@ -35,6 +43,8 @@ export function WildwoodGame() {
   const [autoPlay, setAutoPlay] = useState(false);
   const [roundPlaying, setRoundPlaying] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [bonusSpinsRemaining, setBonusSpinsRemaining] = useState(0);
+  const [bonusSpinStake, setBonusSpinStake] = useState(0);
 
   const boardRef = useRef<WildwoodBoardHandle>(null);
   const balanceRef = useRef(1000);
@@ -42,16 +52,38 @@ export function WildwoodGame() {
   const autoPlayRef = useRef(false);
   const roundPlayingRef = useRef(false);
   const turboRef = useRef(false);
+  const bonusSpinsRemainingRef = useRef(0);
   const autoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Seed the wallet from the account on login/logout. Mid-session updates
+  // (deposits, spins) flow through the play/deposit responses instead, so
+  // this only re-fires when who's logged in actually changes.
+  useEffect(() => {
+    if (!session) return;
+    const balance = session.user.balance ?? 0;
+    const spinsRemaining = session.user.bonusSpinsRemaining ?? 0;
+    balanceRef.current = balance;
+    setDemoBalance(balance);
+    bonusSpinsRemainingRef.current = spinsRemaining;
+    setBonusSpinsRemaining(spinsRemaining);
+    setBonusSpinStake(session.user.bonusSpinStake ?? 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user.id]);
 
   const mutation = useMutation({
     mutationFn: playWildwood,
     onMutate: (staked) => {
       roundPlayingRef.current = true;
       setRoundPlaying(true);
-      const nextBalance = Number((balanceRef.current - staked).toFixed(2));
-      balanceRef.current = nextBalance;
-      setDemoBalance(nextBalance);
+      // Guests get an optimistic local deduction (server is stateless for
+      // them). Logged-in balance/bonus state comes authoritatively from the
+      // response instead, since the server may charge a different (bonus)
+      // stake than what was requested.
+      if (!isLoggedIn) {
+        const nextBalance = Number((balanceRef.current - staked).toFixed(2));
+        balanceRef.current = nextBalance;
+        setDemoBalance(nextBalance);
+      }
       setDisplayedWin(0);
       setStepInfo(null);
       return { staked };
@@ -61,7 +93,7 @@ export function WildwoodGame() {
       setRoundPlaying(false);
       autoPlayRef.current = false;
       setAutoPlay(false);
-      if (context) {
+      if (context && !isLoggedIn) {
         const restored = Number((balanceRef.current + context.staked).toFixed(2));
         balanceRef.current = restored;
         setDemoBalance(restored);
@@ -75,7 +107,8 @@ export function WildwoodGame() {
   const startRound = useCallback(() => {
     if (mutation.isPending || roundPlayingRef.current) return;
     const currentStake = stakeRef.current;
-    if (balanceRef.current < currentStake) {
+    const hasBonusSpin = bonusSpinsRemainingRef.current > 0;
+    if (!hasBonusSpin && balanceRef.current < currentStake) {
       autoPlayRef.current = false;
       setAutoPlay(false);
       return;
@@ -89,22 +122,33 @@ export function WildwoodGame() {
   }, []);
 
   const handleRoundComplete = useCallback(
-    (completed: WildwoodRoundResult) => {
-      const nextBalance = Number((balanceRef.current + completed.cappedWin).toFixed(2));
-      balanceRef.current = nextBalance;
-      setDemoBalance(nextBalance);
+    (completed: PlayResult) => {
+      if (completed.wallet) {
+        balanceRef.current = completed.wallet.balance;
+        setDemoBalance(completed.wallet.balance);
+        bonusSpinsRemainingRef.current = completed.wallet.bonusSpinsRemaining;
+        setBonusSpinsRemaining(completed.wallet.bonusSpinsRemaining);
+        setBonusSpinStake(completed.wallet.bonusSpinStake);
+        // Keep the header's balance pill (a separate useSession() subscriber) in sync.
+        void refetchSession();
+      } else {
+        const nextBalance = Number((balanceRef.current + completed.cappedWin).toFixed(2));
+        balanceRef.current = nextBalance;
+        setDemoBalance(nextBalance);
+      }
       setDisplayedWin(completed.cappedWin);
       roundPlayingRef.current = false;
       setRoundPlaying(false);
 
-      if (autoPlayRef.current && nextBalance >= stakeRef.current) {
+      const canAffordNext = bonusSpinsRemainingRef.current > 0 || balanceRef.current >= stakeRef.current;
+      if (autoPlayRef.current && canAffordNext) {
         autoTimerRef.current = setTimeout(startRound, turboRef.current ? 220 : 650);
       } else if (autoPlayRef.current) {
         autoPlayRef.current = false;
         setAutoPlay(false);
       }
     },
-    [startRound]
+    [startRound, refetchSession]
   );
 
   useEffect(() => {
@@ -154,19 +198,26 @@ export function WildwoodGame() {
         </div>
 
         <div className="mx-auto mt-3 w-full max-w-2xl rounded-[1.75rem] border border-amber-200/15 bg-[linear-gradient(180deg,rgba(52,33,15,0.94),rgba(7,17,12,0.98))] p-3 shadow-[inset_0_1px_0_rgba(255,245,200,0.12),0_16px_30px_-18px_rgba(0,0,0,0.9)]">
+          {bonusSpinsRemaining > 0 ? (
+            <div className="mb-3 flex items-center justify-center gap-2 rounded-xl border border-amber-200/30 bg-amber-300/10 px-3 py-2 text-xs font-black uppercase tracking-wide text-amber-100">
+              <span aria-hidden="true">🎁</span>
+              Bonus spins: {bonusSpinsRemaining} left @ {formatCredits(bonusSpinStake)}
+            </div>
+          ) : null}
+
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-[1fr_1fr_auto_1fr_1fr] sm:items-center">
-            <CabinetMetric label="Balance" value={demoBalance.toFixed(2)} />
+            <CabinetMetric label="Balance" value={formatCredits(demoBalance)} />
 
             <label className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
               <span className="block text-[10px] font-black uppercase tracking-[0.16em] text-emerald-200/45">Stake</span>
               <select
-                value={stake}
+                value={bonusSpinsRemaining > 0 ? bonusSpinStake : stake}
                 onChange={(event) => {
                   const next = Number(event.target.value);
                   stakeRef.current = next;
                   setStake(next);
                 }}
-                disabled={roundPlaying || autoPlay}
+                disabled={roundPlaying || autoPlay || bonusSpinsRemaining > 0}
                 className="mt-0.5 w-full bg-transparent text-base font-black tabular-nums text-amber-100 outline-none disabled:opacity-50"
               >
                 {WILDWOOD_CONFIG.allowedStakes.map((option) => (
@@ -180,7 +231,7 @@ export function WildwoodGame() {
             <button
               type="button"
               onClick={startRound}
-              disabled={roundPlaying || mutation.isPending || demoBalance < stake}
+              disabled={roundPlaying || mutation.isPending || (bonusSpinsRemaining === 0 && demoBalance < stake)}
               aria-label="Play Wildwood"
               className="group relative col-start-2 row-start-2 mx-auto flex h-20 w-20 items-center justify-center rounded-full border-4 border-amber-100/60 bg-[radial-gradient(circle_at_35%_25%,#d1fae5_0%,#6ee7b7_22%,#10b981_52%,#065f46_78%,#032d22_100%)] text-3xl text-emerald-950 shadow-[inset_0_3px_6px_rgba(255,255,255,0.65),inset_0_-8px_15px_rgba(0,0,0,0.45),0_0_0_5px_rgba(28,18,6,0.9),0_10px_24px_rgba(16,185,129,0.32)] transition hover:brightness-110 active:translate-y-0.5 disabled:cursor-not-allowed disabled:grayscale disabled:opacity-45 sm:col-start-3 sm:row-start-1"
             >
@@ -188,7 +239,7 @@ export function WildwoodGame() {
               <span className="relative translate-x-0.5">{roundPlaying ? "✦" : "▶"}</span>
             </button>
 
-            <CabinetMetric label="Win" value={displayedWin.toFixed(2)} />
+            <CabinetMetric label="Win" value={formatCredits(displayedWin)} />
             <CabinetMetric label="Mode" value={autoPlay ? "AUTO" : turbo ? "TURBO" : "NORMAL"} compact />
           </div>
 
@@ -236,11 +287,11 @@ export function WildwoodGame() {
                 <Metric label="Round" value={round.roundId} />
                 <Metric label="Stake" value={`${round.stake.toFixed(2)}x`} />
                 <Metric label="Spirit Seeds" value={`${round.spiritSeedsSeen}`} />
-                <Metric label="Base win" value={`🪙 ${round.baseWin.toFixed(2)}`} />
-                <Metric label="Bonus" value={round.bonus ? `🪙 ${(round.bonus.bonusWin * round.stake).toFixed(2)}` : "No"} />
+                <Metric label="Base win" value={`🪙 ${formatCredits(round.baseWin)}`} />
+                <Metric label="Bonus" value={round.bonus ? `🪙 ${formatCredits(round.bonus.bonusWin * round.stake)}` : "No"} />
                 {round.bonus ? <Metric label="Bonus peak" value={`${round.bonus.peakMultiplier}x · ${round.bonus.collectorsHeld} held`} /> : null}
-                <Metric label="Total win" value={`🪙 ${round.cappedWin.toFixed(2)}`} />
-                <Metric label="Uncapped" value={`🪙 ${round.uncappedWin.toFixed(2)}`} />
+                <Metric label="Total win" value={`🪙 ${formatCredits(round.cappedWin)}`} />
+                <Metric label="Uncapped" value={`🪙 ${formatCredits(round.uncappedWin)}`} />
                 <Metric label="Cap applied" value={round.capApplied ? "Yes" : "No"} />
               </dl>
             ) : (

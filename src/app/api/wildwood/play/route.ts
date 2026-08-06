@@ -39,8 +39,8 @@ export async function POST(request: Request) {
 
   // Logged-in players auto-consume bonus spins at the locked bonus stake
   // before any real balance is touched, regardless of the stake they picked.
-  const isBonusSpin = session.user.bonusSpinsRemaining > 0;
-  const stake = isBonusSpin ? session.user.bonusSpinStake : requestedStake;
+  const isBonusSpin = (session.user.bonusSpinsRemaining ?? 0) > 0;
+  const stake = isBonusSpin ? (session.user.bonusSpinStake ?? requestedStake) : requestedStake;
 
   const round = resolveWildwoodRound({ seed: resolveSeed(body.seed), stake });
 

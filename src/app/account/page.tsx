@@ -14,6 +14,10 @@ export default async function AccountPage() {
   if (!session) redirect("/login");
 
   const { user } = session;
+  const balance = user.balance ?? 0;
+  const bonusSpinsRemaining = user.bonusSpinsRemaining ?? 0;
+  const bonusSpinStake = user.bonusSpinStake ?? 0;
+  const hasDeposited = user.hasDeposited ?? false;
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
@@ -23,15 +27,12 @@ export default async function AccountPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <SummaryTile label="Balance" value={`🪙 ${formatCredits(user.balance)}`} />
-        <SummaryTile label="Bonus spins left" value={`${user.bonusSpinsRemaining}`} />
-        <SummaryTile
-          label="Bonus stake"
-          value={user.bonusSpinsRemaining > 0 ? `${formatCredits(user.bonusSpinStake)} / spin` : "—"}
-        />
+        <SummaryTile label="Balance" value={`🪙 ${formatCredits(balance)}`} />
+        <SummaryTile label="Bonus spins left" value={`${bonusSpinsRemaining}`} />
+        <SummaryTile label="Bonus stake" value={bonusSpinsRemaining > 0 ? `${formatCredits(bonusSpinStake)} / spin` : "—"} />
       </div>
 
-      <DepositPanel hasDeposited={user.hasDeposited} />
+      <DepositPanel hasDeposited={hasDeposited} />
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.75rem] border border-white/10 bg-white/[0.04] p-5">
         <Link
