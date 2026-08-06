@@ -81,7 +81,7 @@ function buildTestBoard(entries: Array<{ x: number; y: number; symbol: SymbolTyp
 }
 
 describe("collector routes", () => {
-  it("lets only the first collector claim an overlapping normal symbol", () => {
+  it("lets only one collector claim an overlapping normal symbol, favouring the higher multiplier", () => {
     const board = buildTestBoard([
       { x: 0, y: 0, symbol: "fox" },
       { x: 1, y: 0, symbol: "leaf" },
@@ -90,10 +90,26 @@ describe("collector routes", () => {
 
     const collection = resolveCollection(board);
 
+    // stag (1.5x) outranks fox (1x), so it claims the contested leaf even though fox is first in board order.
     expect(collection.indices).toEqual([1]);
-    expect(collection.win).toBe(WILDWOOD_CONFIG.symbolValues.leaf * WILDWOOD_CONFIG.collectorMultipliers.fox);
+    expect(collection.win).toBeCloseTo(WILDWOOD_CONFIG.symbolValues.leaf * WILDWOOD_CONFIG.collectorMultipliers.stag, 6);
     expect(collection.collectorRoutes).toHaveLength(1);
-    expect(collection.collectorRoutes[0].symbol).toBe("fox");
+    expect(collection.collectorRoutes[0].symbol).toBe("stag");
+  });
+
+  it("resolves a three-way contest (fox, stag, wisp all reach one leaf) in favour of wisp", () => {
+    const board = buildTestBoard([
+      { x: 1, y: 1, symbol: "fox" },
+      { x: 3, y: 1, symbol: "stag" },
+      { x: 1, y: 3, symbol: "wisp" },
+      { x: 2, y: 2, symbol: "leaf" }
+    ]);
+
+    const collection = resolveCollection(board);
+
+    expect(collection.win).toBeCloseTo(WILDWOOD_CONFIG.symbolValues.leaf * WILDWOOD_CONFIG.collectorMultipliers.wisp, 6);
+    expect(collection.collectorRoutes).toHaveLength(1);
+    expect(collection.collectorRoutes[0].symbol).toBe("wisp");
   });
 
   it("keeps a Spirit Seed available to every applicable collector", () => {
@@ -109,7 +125,8 @@ describe("collector routes", () => {
     expect(collection.spiritSeedsCollected).toBe(1);
     expect(collection.spiritSeedIndices).toEqual([1]);
     expect(board[1].symbol).toBe("spiritSeed");
-    expect(collection.collectorRoutes.map((route) => route.symbol)).toEqual(["owl", "wisp"]);
+    // Route order now follows collection priority (wisp 3x before owl 2x), not board order.
+    expect(collection.collectorRoutes.map((route) => route.symbol)).toEqual(["wisp", "owl"]);
     expect(collection.win).toBe(
       WILDWOOD_CONFIG.symbolValues.spiritSeed *
         (WILDWOOD_CONFIG.collectorMultipliers.owl + WILDWOOD_CONFIG.collectorMultipliers.wisp)

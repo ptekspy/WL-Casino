@@ -393,10 +393,14 @@ type CollectionResult = {
  *
  * Each collector may only target applicable symbols that were adjacent to its
  * original position at the start of the collection phase. Collectors act in
- * board order. A normal symbol becomes an empty traversable cell as soon as it
- * is claimed, so later collectors cannot also receive its value. Spirit Seeds
- * remain available to every eligible collector and persist unchanged after the
- * collection phase, allowing them to pay again on a later cascade or breath.
+ * descending payout-multiplier order (wisp, then owl, then stag, then fox;
+ * board order breaks ties) so that when two collectors could reach the same
+ * normal symbol, the higher-paying one gets first pick — it reads as more
+ * rewarding than an arbitrary position-based winner. A normal symbol becomes
+ * an empty traversable cell as soon as it is claimed, so later collectors
+ * cannot also receive its value. Spirit Seeds remain available to every
+ * eligible collector and persist unchanged after the collection phase,
+ * allowing them to pay again on a later cascade or breath.
  */
 export function resolveCollection(board: readonly BoardCell[], multiplier = 1): CollectionResult {
   const claimedNormal = new Set<number>();
@@ -405,10 +409,9 @@ export function resolveCollection(board: readonly BoardCell[], multiplier = 1): 
   const collectorRoutes: CollectorRoute[] = [];
   let rawWin = 0;
 
-  for (let originIndex = 0; originIndex < board.length; originIndex += 1) {
+  for (const originIndex of collectorIndicesByPriority(board)) {
     const collector = board[originIndex];
-    if (!isCollector(collector.symbol)) continue;
-    const collectorSymbol = collector.symbol;
+    const collectorSymbol = collector.symbol as CollectorType;
 
     const eligibleTargets = new Set(
       NEIGHBOUR_INDEX[originIndex].filter((index) => TARGET_SETS[collectorSymbol].has(board[index].symbol))
@@ -424,7 +427,7 @@ export function resolveCollection(board: readonly BoardCell[], multiplier = 1): 
         board,
         currentIndex,
         originIndex,
-        collector: collector.symbol,
+        collector: collectorSymbol,
         eligibleTargets,
         claimedNormal,
         seedsCollectedByThisCollector
@@ -449,12 +452,12 @@ export function resolveCollection(board: readonly BoardCell[], multiplier = 1): 
         collectedIndices.push(destination);
       }
 
-      rawWin += target.value * WILDWOOD_CONFIG.collectorMultipliers[collector.symbol];
+      rawWin += target.value * WILDWOOD_CONFIG.collectorMultipliers[collectorSymbol];
       currentIndex = destination;
     }
 
     if (moves.length > 0) {
-      collectorRoutes.push({ x: collector.x, y: collector.y, symbol: collector.symbol, moves });
+      collectorRoutes.push({ x: collector.x, y: collector.y, symbol: collectorSymbol, moves });
     }
   }
 
@@ -722,6 +725,19 @@ function countCollectors(board: readonly BoardCell[]): number {
 
 function isCollector(symbol: SymbolType): symbol is CollectorType {
   return symbol === "fox" || symbol === "owl" || symbol === "stag" || symbol === "wisp";
+}
+
+/** Collector board indices, highest payout multiplier first (board order breaks ties). */
+function collectorIndicesByPriority(board: readonly BoardCell[]): number[] {
+  const indices: number[] = [];
+  for (let index = 0; index < board.length; index += 1) {
+    if (isCollector(board[index].symbol)) indices.push(index);
+  }
+  return indices.sort(
+    (a, b) =>
+      WILDWOOD_CONFIG.collectorMultipliers[board[b].symbol as CollectorType] -
+      WILDWOOD_CONFIG.collectorMultipliers[board[a].symbol as CollectorType]
+  );
 }
 
 function pickSymbol(rng: Rng, weights: readonly { symbol: SymbolType; weight: number }[]): SymbolType {

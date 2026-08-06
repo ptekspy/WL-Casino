@@ -19,6 +19,8 @@ const BOARD_H = ROWS * CELL + (ROWS - 1) * GAP;
 const DESIGN_W = BOARD_W + FRAME_PAD * 2;
 const DESIGN_H = BOARD_H + FRAME_PAD * 2 + TOP_BAR;
 export const WILDWOOD_BOARD_ASPECT = `${DESIGN_W} / ${DESIGN_H}`;
+export const WILDWOOD_BOARD_DESIGN_WIDTH = DESIGN_W;
+export const WILDWOOD_BOARD_DESIGN_HEIGHT = DESIGN_H;
 
 const SYMBOL_COLORS: Record<SymbolType, number> = {
   leaf: 0x34d399,

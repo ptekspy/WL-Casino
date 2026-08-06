@@ -32,9 +32,10 @@ export async function POST(request: Request) {
 
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session) {
-    return NextResponse.json(resolveWildwoodRound({ seed: resolveSeed(body.seed), stake: requestedStake }), {
-      headers: { "Cache-Control": "no-store" }
-    });
+    return NextResponse.json(
+      { error: "Sign up or log in to play." },
+      { status: 401, headers: { "Cache-Control": "no-store" } }
+    );
   }
 
   // Logged-in players auto-consume bonus spins at the locked bonus stake

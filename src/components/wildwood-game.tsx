@@ -5,13 +5,32 @@ import type { SymbolType, WildwoodRoundResult, WildwoodStep } from "@/lib/wildwo
 import { WILDWOOD_CONFIG } from "@/lib/wildwood";
 import { SYMBOL_ICON_SRC } from "@/lib/pixi/assets";
 import { wildwoodSound } from "@/lib/pixi/sound";
-import { WILDWOOD_BOARD_ASPECT, WildwoodPixiBoard, type WildwoodBoardHandle } from "@/components/wildwood-pixi-board";
+import {
+  WILDWOOD_BOARD_ASPECT,
+  WILDWOOD_BOARD_DESIGN_HEIGHT,
+  WILDWOOD_BOARD_DESIGN_WIDTH,
+  WildwoodPixiBoard,
+  type WildwoodBoardHandle
+} from "@/components/wildwood-pixi-board";
 import { authClient } from "@/lib/auth-client";
 import { formatCredits } from "@/lib/currency";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+/**
+ * Everything around the board (site header, page header, cabinet, replay bar,
+ * paddings) that eats into viewport height. The board's max-width is derived
+ * from whatever's left of 100dvh so the play button never scrolls off-screen
+ * on short viewports. Tuned against the live layout — re-check after touching
+ * any of those surrounding pieces.
+ */
+const BOARD_HEIGHT_BUDGET_PX = 470;
+
 type WalletState = { balance: number; bonusSpinsRemaining: number; bonusSpinStake: number; isBonusSpin: boolean };
+// Optional because WildwoodPixiBoard's onRoundComplete is typed over the base
+// WildwoodRoundResult — the play API always includes it now that play is
+// account-gated, but this stays a boundary check on the HTTP response.
 type PlayResult = WildwoodRoundResult & { wallet?: WalletState };
 
 async function playWildwood(stake: number): Promise<PlayResult> {
@@ -31,10 +50,10 @@ async function playWildwood(stake: number): Promise<PlayResult> {
 type StepInfo = { index: number; step: WildwoodStep; total: number };
 
 export function WildwoodGame() {
-  const { data: session, refetch: refetchSession } = authClient.useSession();
+  const { data: session, isPending: sessionPending, refetch: refetchSession } = authClient.useSession();
   const isLoggedIn = Boolean(session);
 
-  const [demoBalance, setDemoBalance] = useState(1000);
+  const [demoBalance, setDemoBalance] = useState(0);
   const [stake, setStake] = useState(1);
   const [displayedWin, setDisplayedWin] = useState(0);
   const [stepInfo, setStepInfo] = useState<StepInfo | null>(null);
@@ -47,7 +66,7 @@ export function WildwoodGame() {
   const [bonusSpinStake, setBonusSpinStake] = useState(0);
 
   const boardRef = useRef<WildwoodBoardHandle>(null);
-  const balanceRef = useRef(1000);
+  const balanceRef = useRef(0);
   const stakeRef = useRef(1);
   const autoPlayRef = useRef(false);
   const roundPlayingRef = useRef(false);
@@ -72,32 +91,20 @@ export function WildwoodGame() {
 
   const mutation = useMutation({
     mutationFn: playWildwood,
-    onMutate: (staked) => {
+    onMutate: () => {
       roundPlayingRef.current = true;
       setRoundPlaying(true);
-      // Guests get an optimistic local deduction (server is stateless for
-      // them). Logged-in balance/bonus state comes authoritatively from the
-      // response instead, since the server may charge a different (bonus)
-      // stake than what was requested.
-      if (!isLoggedIn) {
-        const nextBalance = Number((balanceRef.current - staked).toFixed(2));
-        balanceRef.current = nextBalance;
-        setDemoBalance(nextBalance);
-      }
+      // Balance/bonus state comes authoritatively from the play response
+      // (handleRoundComplete), since the server may charge a different
+      // (bonus) stake than the one requested — no optimistic update here.
       setDisplayedWin(0);
       setStepInfo(null);
-      return { staked };
     },
-    onError: (_error, _staked, context) => {
+    onError: () => {
       roundPlayingRef.current = false;
       setRoundPlaying(false);
       autoPlayRef.current = false;
       setAutoPlay(false);
-      if (context && !isLoggedIn) {
-        const restored = Number((balanceRef.current + context.staked).toFixed(2));
-        balanceRef.current = restored;
-        setDemoBalance(restored);
-      }
     }
   });
 
@@ -105,7 +112,7 @@ export function WildwoodGame() {
   const replayEnabled = Boolean(round && stepInfo && stepInfo.total > 1);
 
   const startRound = useCallback(() => {
-    if (mutation.isPending || roundPlayingRef.current) return;
+    if (!isLoggedIn || mutation.isPending || roundPlayingRef.current) return;
     const currentStake = stakeRef.current;
     const hasBonusSpin = bonusSpinsRemainingRef.current > 0;
     if (!hasBonusSpin && balanceRef.current < currentStake) {
@@ -115,7 +122,7 @@ export function WildwoodGame() {
     }
     wildwoodSound.resume();
     mutation.mutate(currentStake);
-  }, [mutation]);
+  }, [isLoggedIn, mutation]);
 
   const handleStepChange = useCallback((index: number, step: WildwoodStep, total: number) => {
     setStepInfo({ index, step, total });
@@ -123,19 +130,17 @@ export function WildwoodGame() {
 
   const handleRoundComplete = useCallback(
     (completed: PlayResult) => {
-      if (completed.wallet) {
-        balanceRef.current = completed.wallet.balance;
-        setDemoBalance(completed.wallet.balance);
-        bonusSpinsRemainingRef.current = completed.wallet.bonusSpinsRemaining;
-        setBonusSpinsRemaining(completed.wallet.bonusSpinsRemaining);
-        setBonusSpinStake(completed.wallet.bonusSpinStake);
-        // Keep the header's balance pill (a separate useSession() subscriber) in sync.
-        void refetchSession();
-      } else {
-        const nextBalance = Number((balanceRef.current + completed.cappedWin).toFixed(2));
-        balanceRef.current = nextBalance;
-        setDemoBalance(nextBalance);
-      }
+      // Play is account-gated server-side (401 without a session), so a
+      // completed round always carries wallet state; `wallet` is only
+      // optional in the type to satisfy WildwoodPixiBoard's base round type.
+      const wallet = completed.wallet as WalletState;
+      balanceRef.current = wallet.balance;
+      setDemoBalance(wallet.balance);
+      bonusSpinsRemainingRef.current = wallet.bonusSpinsRemaining;
+      setBonusSpinsRemaining(wallet.bonusSpinsRemaining);
+      setBonusSpinStake(wallet.bonusSpinStake);
+      // Keep the header's balance pill (a separate useSession() subscriber) in sync.
+      void refetchSession();
       setDisplayedWin(completed.cappedWin);
       roundPlayingRef.current = false;
       setRoundPlaying(false);
@@ -185,20 +190,41 @@ export function WildwoodGame() {
   return (
     <div className="flex flex-col gap-6">
       <section className="rounded-[2rem] border border-emerald-100/10 bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.08),transparent_42%),rgba(255,255,255,0.035)] p-3 shadow-2xl shadow-black/40 sm:p-5">
-        <div className="mb-4 px-2">
-          <h2 className="text-2xl font-black tracking-tight text-white">Wildwood</h2>
-          <p className="text-sm text-emerald-100/55">The forest remembers every cascade.</p>
+        <div className="mb-2 px-2">
+          <h2 className="text-xl font-black tracking-tight text-white">Wildwood</h2>
         </div>
 
         <div
-          className="relative mx-auto w-full max-w-2xl overflow-hidden rounded-[1.75rem] border border-amber-300/15 bg-black/40 shadow-[0_0_0_1px_rgba(245,197,66,0.06),0_25px_60px_-15px_rgba(0,0,0,0.8)]"
-          style={{ aspectRatio: WILDWOOD_BOARD_ASPECT }}
+          className="relative mx-auto w-full overflow-hidden rounded-[1.75rem] border border-amber-300/15 bg-black/40 shadow-[0_0_0_1px_rgba(245,197,66,0.06),0_25px_60px_-15px_rgba(0,0,0,0.8)]"
+          style={{
+            aspectRatio: WILDWOOD_BOARD_ASPECT,
+            maxWidth: `min(42rem, calc((100dvh - ${BOARD_HEIGHT_BUDGET_PX}px) * ${WILDWOOD_BOARD_DESIGN_WIDTH} / ${WILDWOOD_BOARD_DESIGN_HEIGHT}))`
+          }}
         >
           <WildwoodPixiBoard ref={boardRef} round={round} onStepChange={handleStepChange} onRoundComplete={handleRoundComplete} />
         </div>
 
         <div className="mx-auto mt-3 w-full max-w-2xl rounded-[1.75rem] border border-amber-200/15 bg-[linear-gradient(180deg,rgba(52,33,15,0.94),rgba(7,17,12,0.98))] p-3 shadow-[inset_0_1px_0_rgba(255,245,200,0.12),0_16px_30px_-18px_rgba(0,0,0,0.9)]">
-          {bonusSpinsRemaining > 0 ? (
+          {!sessionPending && !isLoggedIn ? (
+            <div className="mb-3 flex flex-col items-center gap-2 rounded-xl border border-emerald-200/30 bg-emerald-300/10 px-3 py-3 text-center">
+              <p className="text-sm font-black text-white">Sign up to play Wildwood</p>
+              <p className="text-xs text-emerald-100/60">Free account, demo balance, a welcome bonus on your first deposit.</p>
+              <div className="mt-1 flex gap-2">
+                <Link
+                  href="/signup"
+                  className="rounded-full border border-amber-200/30 bg-gradient-to-b from-emerald-400 to-emerald-600 px-4 py-2 text-xs font-black text-emerald-950 transition hover:brightness-110"
+                >
+                  Sign up
+                </Link>
+                <Link
+                  href="/login"
+                  className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-black text-white transition hover:bg-white/10"
+                >
+                  Log in
+                </Link>
+              </div>
+            </div>
+          ) : bonusSpinsRemaining > 0 ? (
             <div className="mb-3 flex items-center justify-center gap-2 rounded-xl border border-amber-200/30 bg-amber-300/10 px-3 py-2 text-xs font-black uppercase tracking-wide text-amber-100">
               <span aria-hidden="true">🎁</span>
               Bonus spins: {bonusSpinsRemaining} left @ {formatCredits(bonusSpinStake)}
@@ -217,7 +243,7 @@ export function WildwoodGame() {
                   stakeRef.current = next;
                   setStake(next);
                 }}
-                disabled={roundPlaying || autoPlay || bonusSpinsRemaining > 0}
+                disabled={!isLoggedIn || roundPlaying || autoPlay || bonusSpinsRemaining > 0}
                 className="mt-0.5 w-full bg-transparent text-base font-black tabular-nums text-amber-100 outline-none disabled:opacity-50"
               >
                 {WILDWOOD_CONFIG.allowedStakes.map((option) => (
@@ -231,7 +257,7 @@ export function WildwoodGame() {
             <button
               type="button"
               onClick={startRound}
-              disabled={roundPlaying || mutation.isPending || (bonusSpinsRemaining === 0 && demoBalance < stake)}
+              disabled={!isLoggedIn || roundPlaying || mutation.isPending || (bonusSpinsRemaining === 0 && demoBalance < stake)}
               aria-label="Play Wildwood"
               className="group relative col-start-2 row-start-2 mx-auto flex h-20 w-20 items-center justify-center rounded-full border-4 border-amber-100/60 bg-[radial-gradient(circle_at_35%_25%,#d1fae5_0%,#6ee7b7_22%,#10b981_52%,#065f46_78%,#032d22_100%)] text-3xl text-emerald-950 shadow-[inset_0_3px_6px_rgba(255,255,255,0.65),inset_0_-8px_15px_rgba(0,0,0,0.45),0_0_0_5px_rgba(28,18,6,0.9),0_10px_24px_rgba(16,185,129,0.32)] transition hover:brightness-110 active:translate-y-0.5 disabled:cursor-not-allowed disabled:grayscale disabled:opacity-45 sm:col-start-3 sm:row-start-1"
             >
@@ -244,7 +270,7 @@ export function WildwoodGame() {
           </div>
 
           <div className="mt-3 grid grid-cols-4 gap-2 border-t border-white/10 pt-3">
-            <DeckButton label="Auto" icon="↻" active={autoPlay} onClick={toggleAutoplay} />
+            <DeckButton label="Auto" icon="↻" active={autoPlay} disabled={!isLoggedIn} onClick={toggleAutoplay} />
             <DeckButton label="Turbo" icon="⚡" active={turbo} onClick={() => setTurbo((value) => !value)} />
             <DeckButton label={muted ? "Muted" : "Sound"} icon={muted ? "🔇" : "🔊"} active={!muted} onClick={toggleSound} />
             <DeckButton label="Info" icon="i" active={showInfo} onClick={() => setShowInfo((value) => !value)} />
@@ -350,13 +376,20 @@ function CabinetMetric({ label, value, compact = false }: Readonly<{ label: stri
   );
 }
 
-function DeckButton({ label, icon, active, onClick }: Readonly<{ label: string; icon: string; active: boolean; onClick: () => void }>) {
+function DeckButton({
+  label,
+  icon,
+  active,
+  disabled = false,
+  onClick
+}: Readonly<{ label: string; icon: string; active: boolean; disabled?: boolean; onClick: () => void }>) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-pressed={active}
-      className={`rounded-xl border px-2 py-2 text-xs font-black uppercase tracking-wide transition ${
+      className={`rounded-xl border px-2 py-2 text-xs font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-40 ${
         active
           ? "border-emerald-200/40 bg-emerald-300/15 text-emerald-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_0_14px_rgba(16,185,129,0.12)]"
           : "border-white/10 bg-black/25 text-emerald-100/45 hover:border-white/20 hover:text-emerald-100/75"
