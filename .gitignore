@@ -10,3 +10,4 @@ coverage
 pnpm-debug.log*
 reports
 .aws-sam
+data/

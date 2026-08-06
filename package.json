@@ -4,7 +4,7 @@
   "packageManager": "pnpm@10.14.0",
   "type": "module",
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev --turbopack -p 6799",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
@@ -14,6 +14,8 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
+    "better-auth": "^1.6.26",
+    "better-sqlite3": "^13.0.3",
     "next": "^16.3.0",
     "pixi.js": "^8.19.0",
     "react": "^19.2.8",
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.1.2",
     "@types/pngjs": "^6.0.5",
     "@types/react": "^19.2.18",
@@ -30,5 +33,10 @@
     "tsx": "^4.23.7",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
   }
 }

@@ -5,8 +5,8 @@
       "name": "wl-casino-dev",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["run", "dev"],
-      "port": 3000,
-      "autoPort": true
+      "port": 6799,
+      "autoPort": false
     }
   ]
 }

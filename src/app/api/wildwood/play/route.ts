@@ -1,5 +1,7 @@
 import { WILDWOOD_CONFIG, isAllowedStake, resolveWildwoodRound } from "@/lib/wildwood";
 import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { InsufficientBalanceError, settleRound } from "@/lib/wallet";
 
 export const dynamic = "force-dynamic";
 
@@ -26,11 +28,31 @@ export async function POST(request: Request) {
     );
   }
 
-  const stake = isAllowedStake(body.stake) ? body.stake : 1;
+  const requestedStake = isAllowedStake(body.stake) ? body.stake : 1;
 
-  return NextResponse.json(resolveWildwoodRound({ seed: resolveSeed(body.seed), stake }), {
-    headers: { "Cache-Control": "no-store" }
-  });
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session) {
+    return NextResponse.json(resolveWildwoodRound({ seed: resolveSeed(body.seed), stake: requestedStake }), {
+      headers: { "Cache-Control": "no-store" }
+    });
+  }
+
+  // Logged-in players auto-consume bonus spins at the locked bonus stake
+  // before any real balance is touched, regardless of the stake they picked.
+  const isBonusSpin = session.user.bonusSpinsRemaining > 0;
+  const stake = isBonusSpin ? session.user.bonusSpinStake : requestedStake;
+
+  const round = resolveWildwoodRound({ seed: resolveSeed(body.seed), stake });
+
+  try {
+    const wallet = settleRound(session.user.id, { stakeCharged: stake, isBonusSpin, win: round.cappedWin });
+    return NextResponse.json({ ...round, wallet: { ...wallet, isBonusSpin } }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    if (error instanceof InsufficientBalanceError) {
+      return NextResponse.json({ error: "Insufficient balance." }, { status: 400, headers: { "Cache-Control": "no-store" } });
+    }
+    throw error;
+  }
 }
 
 function resolveSeed(candidate: unknown): string {
