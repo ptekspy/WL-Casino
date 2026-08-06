@@ -1,6 +1,7 @@
 import { Hero } from "@/components/marketing/hero";
 import { FeatureGrid } from "@/components/marketing/feature-grid";
 import { PromoBanner } from "@/components/marketing/promo-banner";
+import { CollectorShowcase } from "@/components/marketing/collector-showcase";
 import { GameCard } from "@/components/games/game-card";
 import { GAMES } from "@/lib/games";
 
@@ -9,6 +10,7 @@ export default function Home() {
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-4 py-6 sm:px-6 lg:px-8">
       <Hero />
       <FeatureGrid />
+      <CollectorShowcase />
 
       <section>
         <div className="mb-5 flex items-baseline justify-between">

@@ -337,7 +337,7 @@ function buildWorld(app: Application): BoardWorld {
   shakeContainer.addChild(multiplierBadge.container);
 
   const potBadge = buildPotBadge();
-  potBadge.container.position.set(82, 26);
+  potBadge.container.position.set(18, 28);
   shakeContainer.addChild(potBadge.container);
 
   const seedTracker = buildSeedTracker(WILDWOOD_CONFIG.bonusTriggerSeeds);
@@ -839,7 +839,9 @@ function buildWorld(app: Application): BoardWorld {
     token.height = tokenSize;
     token.tint = 0xffffff;
     const [startX, startY] = cellCenter(x, y);
-    const targetX = potBadge.container.position.x - boardContainer.position.x;
+    // Pot badge content is left-anchored and width-fits its text, so aim for
+    // its approximate visual center rather than its top-left container origin.
+    const targetX = potBadge.container.position.x + 80 - boardContainer.position.x;
     const targetY = potBadge.container.position.y - boardContainer.position.y;
     token.position.set(startX, startY);
     fxLayer.addChild(token);
@@ -2179,39 +2181,66 @@ function buildMultiplierBadge() {
 }
 
 /**
- * Running cash pot for the round, with a small subtitle underneath for
- * whatever global budget is currently in play — cascades left in the base
- * game, or bonus breaths remaining. Always shows credits, never a raw
- * paytable multiplier.
+ * Running cash pot for the round — the headline HUD element, top-left of the
+ * board — with a small subtitle underneath for whatever global budget is
+ * currently in play (cascades left in the base game, or bonus breaths
+ * remaining). Always shows credits, never a raw paytable multiplier.
+ *
+ * Left-anchored and width-fit-to-content: the pill redraws to whatever the
+ * amount/subtitle currently measure (with a floor so it never looks tiny at
+ * "0.00"), so a big win's digits can never run past its own background or
+ * off the canvas edge the way the old fixed-width pill could. Vertically it
+ * has to share the top bar with `statusText` (the step-by-step caption at
+ * y=58), which runs at the same time during a round — keep this within
+ * roughly y:0-54 if you touch the sizing.
  */
 function buildPotBadge() {
+  const PADDING_X = 18;
+  const MIN_WIDTH = 160;
+  const AMOUNT_Y = -20;
+  const SUB_Y = 12;
+
   const container = new Container();
   const bg = new Graphics();
   container.addChild(bg);
 
   const amountText = new Text({
     text: "🪙 0.00",
-    style: new TextStyle({ fill: 0xffe9a8, fontSize: 19, fontWeight: "900", fontFamily: "system-ui, -apple-system, sans-serif" })
+    style: new TextStyle({
+      fill: 0xfff3d6,
+      fontSize: 24,
+      fontWeight: "900",
+      fontFamily: "system-ui, -apple-system, sans-serif",
+      stroke: { color: 0x2a1704, width: 4 }
+    })
   });
-  amountText.anchor.set(0.5, 0);
-  amountText.position.set(0, -22);
+  amountText.anchor.set(0, 0);
+  amountText.position.set(PADDING_X, AMOUNT_Y);
   container.addChild(amountText);
 
   const subText = new Text({
     text: "",
     style: new TextStyle({ fill: 0xbfe8d6, fontSize: 12, fontWeight: "700", fontFamily: "system-ui, -apple-system, sans-serif" })
   });
-  subText.anchor.set(0.5, 0);
-  subText.position.set(0, 3);
+  subText.anchor.set(0, 0);
+  subText.position.set(PADDING_X, SUB_Y);
   container.addChild(subText);
 
   container.visible = false;
+  let lastTone: "gold" | "emerald" = "emerald";
+
+  function contentWidth(): number {
+    return Math.max(MIN_WIDTH, amountText.width + PADDING_X * 2, subText.width + PADDING_X * 2);
+  }
 
   function redrawBg(tone: "gold" | "emerald") {
-    bg.clear()
-      .roundRect(-66, -27, 132, 50, 16)
-      .fill({ color: 0x0b1f14, alpha: 0.88 })
-      .stroke({ width: 2, color: tone === "gold" ? 0xf5c542 : 0x6ee7b7, alpha: 0.55 });
+    lastTone = tone;
+    const width = contentWidth();
+    bg
+      .clear()
+      .roundRect(0, AMOUNT_Y - 8, width, 54, 16)
+      .fill({ color: 0x0b1f14, alpha: 0.94 })
+      .stroke({ width: 2.5, color: tone === "gold" ? 0xf5c542 : 0x6ee7b7, alpha: 0.75 });
   }
   redrawBg("emerald");
 
@@ -2229,22 +2258,23 @@ function buildPotBadge() {
     },
     setAmount(cash: number) {
       amountText.text = `🪙 ${cash.toFixed(2)}`;
-      amountText.scale.set(1.18);
+      redrawBg(lastTone);
+      amountText.scale.set(1.16);
       const start = performance.now();
       const bump = () => {
         const p = Math.min(1, (performance.now() - start) / 220);
-        amountText.scale.set(1.18 - 0.18 * Easing.outQuad(p));
+        amountText.scale.set(1.16 - 0.16 * Easing.outQuad(p));
         if (p < 1) requestAnimationFrame(bump);
       };
       requestAnimationFrame(bump);
     },
     pulse(color = 0xf5c542) {
-      container.scale.set(1.16);
+      container.scale.set(1.1);
       bg.tint = color;
       const start = performance.now();
       const bump = () => {
         const p = Math.min(1, (performance.now() - start) / 260);
-        container.scale.set(1.16 - 0.16 * Easing.outQuad(p));
+        container.scale.set(1.1 - 0.1 * Easing.outQuad(p));
         bg.tint = lerpColor(color, 0xffffff, p);
         if (p < 1) requestAnimationFrame(bump);
         else bg.tint = 0xffffff;

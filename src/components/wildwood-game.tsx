@@ -19,13 +19,13 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
- * Everything around the board (site header, page header, cabinet, replay bar,
- * paddings) that eats into viewport height. The board's max-width is derived
- * from whatever's left of 100dvh so the play button never scrolls off-screen
- * on short viewports. Tuned against the live layout — re-check after touching
- * any of those surrounding pieces.
+ * Everything around the board (the fullscreen game shell bar, cabinet, replay
+ * bar, paddings) that eats into viewport height. The board's max-width is
+ * derived from whatever's left of 100dvh so the play button never scrolls
+ * off-screen on short viewports. Tuned against the live layout — re-check
+ * after touching the shell bar or cabinet.
  */
-const BOARD_HEIGHT_BUDGET_PX = 470;
+const BOARD_HEIGHT_BUDGET_PX = 235;
 
 type WalletState = { balance: number; bonusSpinsRemaining: number; bonusSpinStake: number; isBonusSpin: boolean };
 // Optional because WildwoodPixiBoard's onRoundComplete is typed over the base
@@ -188,12 +188,8 @@ export function WildwoodGame() {
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex h-full flex-col gap-6">
       <section className="rounded-[2rem] border border-emerald-100/10 bg-[radial-gradient(circle_at_top,rgba(16,185,129,0.08),transparent_42%),rgba(255,255,255,0.035)] p-3 shadow-2xl shadow-black/40 sm:p-5">
-        <div className="mb-2 px-2">
-          <h2 className="text-xl font-black tracking-tight text-white">Wildwood</h2>
-        </div>
-
         <div
           className="relative mx-auto w-full overflow-hidden rounded-[1.75rem] border border-amber-300/15 bg-black/40 shadow-[0_0_0_1px_rgba(245,197,66,0.06),0_25px_60px_-15px_rgba(0,0,0,0.8)]"
           style={{

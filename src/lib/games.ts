@@ -9,7 +9,8 @@ export const GAMES: readonly GameSummary[] = [
     tagline: "Fresh 6×6 cascades with a hold-and-win Spirit Seed bonus.",
     rtp: `${(WILDWOOD_CONFIG.targetRtp * 100).toFixed(0)}%`,
     maxWin: `${WILDWOOD_CONFIG.maxWin}x`,
-    badge: "Featured"
+    badge: "Featured",
+    art: "/assets/wildwood/symbols/fox.png"
   }
 ];
 

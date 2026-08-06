@@ -1,1 +1,21 @@
 @import "tailwindcss";
+
+/* Shared ambient motion for marketing art — used via Tailwind's animate-[...] arbitrary syntax. */
+@keyframes float-slow {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-16px);
+  }
+}
+
+@keyframes drift-slow {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-6%);
+  }
+}
