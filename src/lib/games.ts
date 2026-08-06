@@ -20,7 +20,7 @@ export const GAMES: readonly GameSummary[] = [
     rtp: `${(DRAGONFORGE_CONFIG.targetRtp * 100).toFixed(0)}%`,
     maxWin: `${DRAGONFORGE_CONFIG.maxWin}x`,
     badge: "New",
-    art: "/assets/dragonforge/card-art.svg"
+    art: "/assets/dragonforge/symbols/scout.png"
   }
 ];
 

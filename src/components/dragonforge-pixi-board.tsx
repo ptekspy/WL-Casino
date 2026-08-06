@@ -1,20 +1,22 @@
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { Application, Container, Graphics, Text, TextStyle, type Ticker } from "pixi.js";
+import { Application, Container, Graphics, Sprite, Text, TextStyle, type Ticker } from "pixi.js";
 import type { BoardCell, CollectorType, DragonforgeRoundResult, DragonforgeStep, SymbolType } from "@/lib/dragonforge";
 import { DRAGONFORGE_CONFIG, buildFrames, getCascadeValueMultiplier, getDragonState, getScaledCollectableValue } from "@/lib/dragonforge";
+import { loadDragonforgeAssets, getDragonforgeSymbolTexture } from "@/lib/pixi/dragonforge-assets";
 import { Easing, TweenRunner } from "@/lib/pixi/tween";
 import { dragonforgeSound } from "@/lib/pixi/sound";
 import { getWinPresentation } from "@/lib/pixi/presentation";
 import { formatCredits } from "@/lib/currency";
 
 /**
- * Procedural placeholder art: every symbol is a Pixi Graphics shape rather
- * than a loaded texture, so the game ships with zero image assets today.
- * Swapping to painted portraits later is a contained follow-up (see
- * src/lib/pixi/assets.ts's SYMBOL_FILE pattern) — this file's shape-drawing
- * would become sprite-texture assignment, nothing else here changes.
+ * Painted portraits (see src/lib/pixi/dragonforge-assets.ts), not real alpha
+ * cutouts — the AI generator returned opaque squares with a painted vignette
+ * background. Each symbol sprite gets masked to its shape (circle for
+ * resources, hexagon for collectors, diamond for the Dragon Egg, jagged for
+ * Unstable Rock) at render time instead, matching the crop convention
+ * Wildwood's pre-cropped assets already read as.
  */
 
 const { width: COLS, height: ROWS } = DRAGONFORGE_CONFIG;
@@ -85,60 +87,63 @@ function starPoints(spikes: number, outerRadius: number, innerRadius: number, ro
   return points;
 }
 
-/** Draws a symbol centered at (0,0) into `g` — caller positions the container. */
-function drawSymbolShape(g: Graphics, symbol: SymbolType, size: number) {
-  g.clear();
-  const color = SYMBOL_COLORS[symbol];
-  const highlight = lerpColor(color, 0xffffff, 0.45);
-  const shade = lerpColor(color, 0x000000, 0.35);
+type SymbolShape = "circle" | "hexagon" | "diamond" | "jagged";
 
-  switch (symbol) {
-    case "stone":
-      g.circle(0, 0, size).fill({ color }).stroke({ width: 2.5, color: shade, alpha: 0.6 });
-      g.circle(-size * 0.28, -size * 0.28, size * 0.32).fill({ color: highlight, alpha: 0.55 });
+/** Matches the crop convention from the art prompt style bible: resource/collector/bonus/hazard read as distinct silhouettes. */
+const SYMBOL_SHAPE: Record<SymbolType, SymbolShape> = {
+  stone: "circle",
+  iron: "circle",
+  gold: "circle",
+  gem: "circle",
+  relic: "circle",
+  unstableRock: "jagged",
+  dragonEgg: "diamond",
+  miner: "hexagon",
+  prospector: "hexagon",
+  smith: "hexagon",
+  scout: "hexagon"
+};
+
+/** Draws a symbol's crop shape centered at (0,0) into `g`, for use as a sprite mask. */
+function drawSymbolMask(g: Graphics, symbol: SymbolType, size: number) {
+  g.clear();
+  switch (SYMBOL_SHAPE[symbol]) {
+    case "circle":
+      g.circle(0, 0, size).fill(0xffffff);
       break;
-    case "iron":
-      g.roundRect(-size, -size, size * 2, size * 2, size * 0.32).fill({ color }).stroke({ width: 2.5, color: shade, alpha: 0.6 });
-      g.roundRect(-size * 0.55, -size * 0.55, size * 0.6, size * 0.4, size * 0.14).fill({ color: highlight, alpha: 0.5 });
+    case "hexagon":
+      g.poly(regularPolygonPoints(6, size)).fill(0xffffff);
       break;
-    case "gold":
-      g.poly(regularPolygonPoints(6, size)).fill({ color }).stroke({ width: 2.5, color: shade, alpha: 0.65 });
-      g.poly(regularPolygonPoints(6, size * 0.55)).stroke({ width: 1.5, color: highlight, alpha: 0.7 });
+    case "diamond":
+      g.poly(regularPolygonPoints(4, size)).fill(0xffffff);
       break;
-    case "gem":
-      g.poly(regularPolygonPoints(4, size)).fill({ color }).stroke({ width: 2.5, color: shade, alpha: 0.6 });
-      g.poly([0, -size * 0.9, size * 0.3, 0, 0, size * 0.9]).fill({ color: highlight, alpha: 0.5 });
-      break;
-    case "relic":
-      g.poly(starPoints(8, size, size * 0.62)).fill({ color }).stroke({ width: 2.5, color: shade, alpha: 0.65 });
-      g.circle(0, 0, size * 0.32).fill({ color: highlight, alpha: 0.6 });
-      break;
-    case "unstableRock": {
+    case "jagged": {
       const jagged = [0, -size, size * 0.7, -size * 0.35, size * 0.95, size * 0.3, size * 0.25, size, -size * 0.55, size * 0.85, -size * 0.95, size * 0.1, -size * 0.65, -size * 0.5];
-      g.poly(jagged).fill({ color, alpha: 0.85 }).stroke({ width: 2, color: 0x1c0a02, alpha: 0.7 });
-      g.moveTo(-size * 0.2, -size * 0.4).lineTo(size * 0.15, size * 0.1).lineTo(-size * 0.1, size * 0.55).stroke({ width: 1.5, color: 0xffb347, alpha: 0.35 });
+      g.poly(jagged).fill(0xffffff);
       break;
     }
-    case "dragonEgg":
-      g.ellipse(0, 0, size * 0.78, size).fill({ color }).stroke({ width: 2.5, color: shade, alpha: 0.7 });
-      g.ellipse(-size * 0.15, -size * 0.35, size * 0.22, size * 0.3).fill({ color: 0xfacc15, alpha: 0.75 });
-      g.ellipse(size * 0.2, size * 0.15, size * 0.14, size * 0.2).fill({ color: 0xfacc15, alpha: 0.6 });
+  }
+}
+
+/** Thin bezel ring drawn over the masked sprite so the crop shape reads clearly against the tile. */
+function drawSymbolBezel(g: Graphics, symbol: SymbolType, size: number) {
+  g.clear();
+  const color = SYMBOL_COLORS[symbol];
+  switch (SYMBOL_SHAPE[symbol]) {
+    case "circle":
+      g.circle(0, 0, size).stroke({ width: 2.5, color, alpha: 0.75 });
       break;
-    case "miner":
-      g.poly([0, -size, size * 0.92, size * 0.8, -size * 0.92, size * 0.8]).fill({ color }).stroke({ width: 2.5, color: shade, alpha: 0.6 });
-      g.poly([0, -size * 0.35, size * 0.42, size * 0.4, -size * 0.42, size * 0.4]).fill({ color: highlight, alpha: 0.4 });
+    case "hexagon":
+      g.poly(regularPolygonPoints(6, size)).stroke({ width: 2.5, color, alpha: 0.75 });
       break;
-    case "prospector":
-      g.poly(regularPolygonPoints(5, size)).fill({ color }).stroke({ width: 2.5, color: shade, alpha: 0.6 });
-      g.poly(regularPolygonPoints(5, size * 0.5)).stroke({ width: 1.5, color: highlight, alpha: 0.65 });
+    case "diamond":
+      g.poly(regularPolygonPoints(4, size)).stroke({ width: 2.5, color, alpha: 0.75 });
       break;
-    case "smith":
-      g.poly(starPoints(5, size, size * 0.5)).fill({ color }).stroke({ width: 2.5, color: shade, alpha: 0.65 });
+    case "jagged": {
+      const jagged = [0, -size, size * 0.7, -size * 0.35, size * 0.95, size * 0.3, size * 0.25, size, -size * 0.55, size * 0.85, -size * 0.95, size * 0.1, -size * 0.65, -size * 0.5];
+      g.poly(jagged).stroke({ width: 2, color, alpha: 0.6 });
       break;
-    case "scout":
-      g.poly(starPoints(6, size, size * 0.46)).fill({ color }).stroke({ width: 2.5, color: shade, alpha: 0.65 });
-      g.circle(0, 0, size * 0.24).fill({ color: highlight, alpha: 0.7 });
-      break;
+    }
   }
 }
 
@@ -207,6 +212,9 @@ export const DragonforgePixiBoard = forwardRef<DragonforgeBoardHandle, Dragonfor
       initialized = true;
       host.appendChild(app.canvas);
 
+      await loadDragonforgeAssets();
+      if (cancelled) return;
+
       const world = buildWorld(app);
       worldRef.current = world;
       world.resize();
@@ -252,7 +260,10 @@ type CellView = {
   container: Container;
   tileBg: Graphics;
   glow: Graphics;
-  symbolGfx: Graphics;
+  symbolSprite: Sprite;
+  symbolMask: Graphics;
+  symbolBezel: Graphics;
+  baseSymbolScale: number;
   valueBg: Graphics;
   valueLabel: Text;
   cascadeBadgeBg: Graphics;
@@ -375,9 +386,9 @@ function buildWorld(app: Application): BoardWorld {
       if (cell.symbol && !cell.motionLocked) {
         const phase = cell.x * 1.7 + cell.y * 2.3;
         const motion = getIdleMotion(cell.symbol, glowPulse, phase);
-        cell.symbolGfx.position.set(CELL / 2 + motion.x, CELL / 2 + motion.y);
-        cell.symbolGfx.rotation = motion.rotation;
-        cell.symbolGfx.scale.set(motion.scale);
+        cell.symbolSprite.position.set(CELL / 2 + motion.x, CELL / 2 + motion.y);
+        cell.symbolSprite.rotation = motion.rotation;
+        cell.symbolSprite.scale.set(cell.baseSymbolScale * motion.scale);
       }
       if (cell.glow.alpha === 0 && !cell.symbol) continue;
       cell.glow.alpha = 0.5 + Math.sin(glowPulse * 2 + cell.x * 0.7 + cell.y * 0.5) * 0.3 + presentationLevel * 0.03;
@@ -403,9 +414,10 @@ function buildWorld(app: Application): BoardWorld {
   }
 
   function restoreCellVisualState(cell: CellView) {
-    cell.symbolGfx.visible = true;
-    cell.symbolGfx.alpha = 1;
-    cell.symbolGfx.tint = 0xffffff;
+    cell.symbolSprite.visible = true;
+    cell.symbolSprite.alpha = 1;
+    cell.symbolSprite.tint = 0xffffff;
+    cell.symbolBezel.visible = true;
     cell.glow.visible = true;
     cell.valueBg.visible = true;
     cell.valueLabel.visible = true;
@@ -413,7 +425,8 @@ function buildWorld(app: Application): BoardWorld {
   }
 
   function hideCellVisualState(cell: CellView) {
-    cell.symbolGfx.visible = false;
+    cell.symbolSprite.visible = false;
+    cell.symbolBezel.visible = false;
     cell.glow.visible = false;
     cell.valueBg.visible = false;
     cell.valueLabel.visible = false;
@@ -426,10 +439,14 @@ function buildWorld(app: Application): BoardWorld {
     cell.symbol = symbol;
     cell.motionLocked = false;
     const size = isCollectorSymbol(symbol) ? CELL * 0.34 : symbol === "dragonEgg" ? CELL * 0.32 : CELL * 0.28;
-    drawSymbolShape(cell.symbolGfx, symbol, size);
-    cell.symbolGfx.position.set(CELL / 2, CELL / 2);
-    cell.symbolGfx.rotation = 0;
-    cell.symbolGfx.scale.set(1);
+    drawSymbolMask(cell.symbolMask, symbol, size);
+    drawSymbolBezel(cell.symbolBezel, symbol, size);
+    cell.symbolSprite.texture = getDragonforgeSymbolTexture(symbol);
+    cell.symbolSprite.width = size * 2.3;
+    cell.symbolSprite.height = size * 2.3;
+    cell.symbolSprite.position.set(CELL / 2, CELL / 2);
+    cell.symbolSprite.rotation = 0;
+    cell.baseSymbolScale = cell.symbolSprite.scale.x;
     drawGlow(cell);
     drawValueLabel(cell);
     drawCascadeBadge(cell);
@@ -504,7 +521,7 @@ function buildWorld(app: Application): BoardWorld {
       setCollectableValueMultiplier(nextMultiplier);
       return;
     }
-    const activeCells = cells.filter((cell) => cell.symbol && cell.symbol !== "unstableRock" && !isCollectorSymbol(cell.symbol) && cell.symbolGfx.visible);
+    const activeCells = cells.filter((cell) => cell.symbol && cell.symbol !== "unstableRock" && !isCollectorSymbol(cell.symbol) && cell.symbolSprite.visible);
     const callout = buildValueRiseCallout(headline, detail);
     callout.position.set(BOARD_W / 2, 38);
     callout.alpha = 0;
@@ -684,24 +701,33 @@ function buildWorld(app: Application): BoardWorld {
   }
 
   function spawnValueFly(x: number, y: number, symbol: SymbolType, collector: CollectorType) {
-    const token = new Graphics();
-    drawSymbolShape(token, symbol, 12);
+    const tokenMask = new Graphics().circle(0, 0, 12).fill(0xffffff);
+    const token = new Sprite(getDragonforgeSymbolTexture(symbol));
+    token.anchor.set(0.5);
+    token.width = 26;
+    token.height = 26;
+    token.mask = tokenMask;
     const [startX, startY] = cellCenter(x, y);
     const targetX = potBadge.container.position.x + 80 - boardContainer.position.x;
     const targetY = potBadge.container.position.y - boardContainer.position.y;
     token.position.set(startX, startY);
-    fxLayer.addChild(token);
+    tokenMask.position.set(startX, startY);
+    fxLayer.addChild(tokenMask, token);
     const color = SYMBOL_COLORS[collector];
     void runner
       .animate(600, (p) => {
         const eased = Easing.inOutQuad(p);
         const arc = Math.sin(p * Math.PI) * 58;
-        token.position.set(startX + (targetX - startX) * eased, startY + (targetY - startY) * eased - arc);
+        const px = startX + (targetX - startX) * eased;
+        const py = startY + (targetY - startY) * eased - arc;
+        token.position.set(px, py);
+        tokenMask.position.set(px, py);
         token.rotation += 0.08;
         token.alpha = p > 0.82 ? 1 - (p - 0.82) / 0.18 : 1;
       })
       .then(() => {
         token.destroy();
+        tokenMask.destroy();
         potBadge.pulse(color);
       });
   }
@@ -773,11 +799,11 @@ function buildWorld(app: Application): BoardWorld {
     origin.motionLocked = true;
     await runner.animate(220, (p) => {
       const k = Math.sin(p * Math.PI);
-      origin.symbolGfx.scale.set(1 + k * 0.08);
+      origin.symbolSprite.scale.set(origin.baseSymbolScale * (1 + k * 0.08));
       origin.glow.alpha = 0.55 + k * 0.45;
     });
     origin.motionLocked = false;
-    origin.symbolGfx.scale.set(1);
+    origin.symbolSprite.scale.set(origin.baseSymbolScale);
     return routeLine;
   }
 
@@ -814,11 +840,11 @@ function buildWorld(app: Application): BoardWorld {
     fxLayer.addChild(label);
     await runner.animate(600, (p) => {
       const pulse = Math.sin(p * Math.PI * 3) * (1 - p);
-      egg.symbolGfx.scale.set(1 + pulse * 0.09);
+      egg.symbolSprite.scale.set(egg.baseSymbolScale * (1 + pulse * 0.09));
       label.alpha = p < 0.2 ? p / 0.2 : p > 0.78 ? 1 - (p - 0.78) / 0.22 : 1;
       label.position.y = cy - 52 - Easing.outCubic(p) * 15;
     });
-    egg.symbolGfx.scale.set(1);
+    egg.symbolSprite.scale.set(egg.baseSymbolScale);
     egg.motionLocked = false;
     label.destroy();
     focusShade.alpha = 0;
@@ -855,9 +881,14 @@ function buildWorld(app: Application): BoardWorld {
         .stroke({ width: 7, color: SYMBOL_COLORS[route.symbol], alpha: 0.16 })
         .circle(0, 0, CELL * 0.42)
         .stroke({ width: 3, color: SYMBOL_COLORS[route.symbol], alpha: 0.86 });
-      const icon = new Graphics();
-      drawSymbolShape(icon, route.symbol, CELL * 0.32);
-      mover.addChild(aura, icon);
+      const iconMask = new Graphics();
+      drawSymbolMask(iconMask, route.symbol, CELL * 0.32);
+      const icon = new Sprite(getDragonforgeSymbolTexture(route.symbol));
+      icon.anchor.set(0.5);
+      icon.width = CELL * 0.72;
+      icon.height = CELL * 0.72;
+      icon.mask = iconMask;
+      mover.addChild(aura, iconMask, icon);
       const [originX, originY] = cellCenter(route.x, route.y);
       mover.position.set(originX, originY);
       fxLayer.addChild(mover);
@@ -907,7 +938,8 @@ function buildWorld(app: Application): BoardWorld {
 
       origin.symbol = null;
       restoreCellVisualState(origin);
-      origin.symbolGfx.visible = false;
+      origin.symbolSprite.visible = false;
+      origin.symbolBezel.visible = false;
       origin.valueBg.visible = false;
       origin.valueLabel.visible = false;
       origin.glow.visible = false;
@@ -1373,9 +1405,19 @@ function buildCellView(x: number, y: number): CellView {
   const glow = new Graphics();
   container.addChild(glow);
 
-  const symbolGfx = new Graphics();
-  symbolGfx.position.set(CELL / 2, CELL / 2);
-  container.addChild(symbolGfx);
+  const symbolMask = new Graphics();
+  symbolMask.position.set(CELL / 2, CELL / 2);
+  container.addChild(symbolMask);
+
+  const symbolSprite = new Sprite();
+  symbolSprite.anchor.set(0.5);
+  symbolSprite.position.set(CELL / 2, CELL / 2);
+  symbolSprite.mask = symbolMask;
+  container.addChild(symbolSprite);
+
+  const symbolBezel = new Graphics();
+  symbolBezel.position.set(CELL / 2, CELL / 2);
+  container.addChild(symbolBezel);
 
   const bevel = new Graphics();
   drawTileBevel(bevel);
@@ -1412,7 +1454,10 @@ function buildCellView(x: number, y: number): CellView {
     container,
     tileBg,
     glow,
-    symbolGfx,
+    symbolSprite,
+    symbolMask,
+    symbolBezel,
+    baseSymbolScale: 1,
     valueBg,
     valueLabel,
     cascadeBadgeBg,

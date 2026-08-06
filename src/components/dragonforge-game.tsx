@@ -2,6 +2,7 @@
 
 import type { DragonforgeRoundResult, DragonforgeStep, SymbolType } from "@/lib/dragonforge";
 import { DRAGONFORGE_CONFIG } from "@/lib/dragonforge";
+import { DRAGONFORGE_SYMBOL_ICON_SRC } from "@/lib/pixi/dragonforge-assets";
 import { dragonforgeSound } from "@/lib/pixi/sound";
 import {
   DRAGONFORGE_BOARD_ASPECT,
@@ -26,20 +27,6 @@ type StepInfo = { index: number; step: DragonforgeStep; total: number };
 const SYMBOL_ORDER: SymbolType[] = [
   "stone", "iron", "gold", "gem", "relic", "unstableRock", "dragonEgg", "miner", "prospector", "smith", "scout"
 ];
-
-const SYMBOL_SWATCH: Record<SymbolType, string> = {
-  stone: "#9aa0a8",
-  iron: "#c08a5c",
-  gold: "#f5c542",
-  gem: "#22d3ee",
-  relic: "#c084fc",
-  unstableRock: "#c2410c",
-  dragonEgg: "#2dd4bf",
-  miner: "#f59e0b",
-  prospector: "#38bdf8",
-  smith: "#ef4444",
-  scout: "#a78bfa"
-};
 
 const SYMBOL_DISPLAY_NAME: Record<SymbolType, string> = {
   stone: "Stone",
@@ -184,10 +171,11 @@ export function DragonforgeGame() {
             <ul className="grid grid-cols-2 gap-2 text-xs">
               {SYMBOL_ORDER.map((symbol) => (
                 <li key={symbol} className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 p-2">
-                  <span
-                    aria-hidden="true"
-                    className="h-8 w-8 shrink-0 rounded-full border border-white/15"
-                    style={{ backgroundColor: SYMBOL_SWATCH[symbol] }}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={DRAGONFORGE_SYMBOL_ICON_SRC[symbol]}
+                    alt={symbol}
+                    className="h-8 w-8 shrink-0 rounded-full border border-white/15 object-cover"
                   />
                   <div className="min-w-0">
                     <p className="truncate font-bold text-white">{SYMBOL_DISPLAY_NAME[symbol]}</p>
