@@ -811,7 +811,7 @@ function buildWorld(app: Application): BoardWorld {
     sprite.tint = SYMBOL_COLORS[symbol];
     sprite.blendMode = "add";
     sprite.alpha = 0.82;
-    const size = symbol === "stag" ? 13 : symbol === "wisp" ? 18 : 11;
+    const size = symbol === "stag" ? 8 : symbol === "wisp" ? 18 : 11;
     sprite.width = size;
     sprite.height = size;
     sprite.position.set(x + (Math.random() - 0.5) * 10, y + (Math.random() - 0.5) * 10);
@@ -990,20 +990,20 @@ function buildWorld(app: Application): BoardWorld {
       const k = Math.sin(p * Math.PI);
       switch (route.symbol) {
         case "fox":
-          origin.symbolSprite.scale.set(origin.baseSymbolScaleX * (1 + k * 0.1), origin.baseSymbolScaleY * (1 - k * 0.13));
+          origin.symbolSprite.scale.set(origin.baseSymbolScaleX * (1 + k * 0.035), origin.baseSymbolScaleY * (1 - k * 0.045));
           origin.symbolSprite.rotation = -k * 0.08;
           origin.symbolSprite.position.y = CELL / 2 + k * 5;
           break;
         case "owl":
-          origin.symbolSprite.scale.set(origin.baseSymbolScaleX * (1 + k * 0.17), origin.baseSymbolScaleY * (1 - k * 0.06));
+          origin.symbolSprite.scale.set(origin.baseSymbolScaleX * (1 + k * 0.05), origin.baseSymbolScaleY * (1 - k * 0.025));
           origin.symbolSprite.position.y = CELL / 2 - k * 7;
           break;
         case "stag":
-          origin.symbolSprite.scale.set(origin.baseSymbolScaleX * (1 + k * 0.08), origin.baseSymbolScaleY * (1 + k * 0.12));
+          origin.symbolSprite.scale.set(origin.baseSymbolScaleX * (1 + k * 0.03), origin.baseSymbolScaleY * (1 + k * 0.04));
           origin.symbolSprite.position.y = CELL / 2 - k * 5;
           break;
         case "wisp":
-          origin.symbolSprite.scale.set(origin.baseSymbolScaleX * (1 - k * 0.14), origin.baseSymbolScaleY * (1 + k * 0.18));
+          origin.symbolSprite.scale.set(origin.baseSymbolScaleX * (1 - k * 0.045), origin.baseSymbolScaleY * (1 + k * 0.06));
           origin.symbolSprite.rotation = k * 0.13;
           break;
       }
@@ -1061,14 +1061,14 @@ function buildWorld(app: Application): BoardWorld {
           break;
         case "owl":
           mover.position.y += p < 0.5 ? -0.8 : 1.2;
-          icon.scale.set(1 + impact * 0.16, 1 - impact * 0.08);
+          icon.scale.set(1 + impact * 0.05, 1 - impact * 0.025);
           break;
         case "stag":
           mover.position.y += impact * 0.8;
-          icon.scale.set(1 + impact * 0.1, 1 + impact * 0.16);
+          icon.scale.set(1 + impact * 0.04, 1 + impact * 0.055);
           break;
         case "wisp":
-          icon.scale.set(1 + impact * 0.3, 1 - impact * 0.18);
+          icon.scale.set(1 + impact * 0.08, 1 - impact * 0.05);
           icon.rotation += 0.06;
           break;
       }
@@ -1090,14 +1090,14 @@ function buildWorld(app: Application): BoardWorld {
           mover.position.y -= bounce * 0.45;
           break;
         case "owl":
-          mover.scale.set(1 + bounce * 0.12, 1 - bounce * 0.04);
+          mover.scale.set(1 + bounce * 0.045, 1 - bounce * 0.02);
           break;
         case "stag":
-          mover.scale.set(1 + bounce * 0.08, 1 + bounce * 0.1);
+          mover.scale.set(1 + bounce * 0.035, 1 + bounce * 0.045);
           break;
         case "wisp":
           mover.rotation += 0.08;
-          mover.scale.set(1 + bounce * 0.17);
+          mover.scale.set(1 + bounce * 0.06);
           break;
       }
     });
@@ -1204,23 +1204,23 @@ function buildWorld(app: Application): BoardWorld {
             case "fox":
               offsetY = -Math.sin(p * Math.PI) * 10;
               mover.rotation = Math.sin(p * Math.PI) * 0.16 * Math.sign(targetX - startX || 1);
-              icon.scale.set(1.08, 0.94);
+              icon.scale.set(1.03, 0.985);
               break;
             case "owl":
               offsetY = -Math.sin(p * Math.PI) * 16;
               mover.rotation = Math.sin(p * Math.PI * 2) * 0.04;
-              icon.scale.set(1.12, 0.94);
+              icon.scale.set(1.04, 0.985);
               break;
             case "stag":
               offsetY = -Math.abs(Math.sin(p * Math.PI * 4)) * 5;
               mover.rotation = Math.sin(p * Math.PI) * 0.045 * Math.sign(targetX - startX || 1);
-              icon.scale.set(1.04, 1.08);
+              icon.scale.set(1.02, 1.03);
               break;
             case "wisp":
               offsetX = Math.sin(p * Math.PI * 2) * 8;
               offsetY = -Math.sin(p * Math.PI) * 7;
               mover.rotation += 0.045;
-              icon.scale.set(1 + Math.sin(p * Math.PI) * 0.16, 1 - Math.sin(p * Math.PI) * 0.08);
+              icon.scale.set(1 + Math.sin(p * Math.PI) * 0.05, 1 - Math.sin(p * Math.PI) * 0.03);
               break;
           }
           mover.position.set(baseX + offsetX, baseY + offsetY);
@@ -1258,7 +1258,7 @@ function buildWorld(app: Application): BoardWorld {
           await runner.animate(210, (p) => {
             const bounce = Math.sin(p * Math.PI);
             const targetScale = targetSymbol === "spiritSeed" ? 1 + bounce * 0.2 : Math.max(0.08, 1 - Easing.inQuad(p) * 0.92);
-            mover.scale.set(1 + bounce * 0.16);
+            mover.scale.set(1 + bounce * 0.05);
             target.symbolSprite.scale.set(target.baseSymbolScaleX * targetScale, target.baseSymbolScaleY * targetScale);
             target.shadowSprite.scale.set(target.baseShadowScaleX * targetScale, target.baseShadowScaleY * targetScale);
             target.symbolSprite.alpha = targetSymbol === "spiritSeed" ? 1 : 1 - p;
