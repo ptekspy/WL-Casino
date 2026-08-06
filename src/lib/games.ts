@@ -1,4 +1,5 @@
 import { WILDWOOD_CONFIG } from "@/lib/wildwood";
+import { DRAGONFORGE_CONFIG } from "@/lib/dragonforge";
 import type { GameSummary } from "@/components/games/game-card";
 
 /** Game catalog. Add an entry here (and a route under src/app/games/<slug>) to list a new game in the lobby. */
@@ -11,6 +12,15 @@ export const GAMES: readonly GameSummary[] = [
     maxWin: `${WILDWOOD_CONFIG.maxWin}x`,
     badge: "Featured",
     art: "/assets/wildwood/symbols/fox.png"
+  },
+  {
+    slug: "dragonforge",
+    name: "Dragonforge",
+    tagline: "Push-your-luck cascades — delve the Dragon's Hoard and secure treasure before it wakes.",
+    rtp: `${(DRAGONFORGE_CONFIG.targetRtp * 100).toFixed(0)}%`,
+    maxWin: `${DRAGONFORGE_CONFIG.maxWin}x`,
+    badge: "New",
+    art: "/assets/dragonforge/card-art.svg"
   }
 ];
 

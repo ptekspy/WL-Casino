@@ -1,44 +1,75 @@
 "use client";
 
-import type { SymbolType, WildwoodRoundResult, WildwoodStep } from "@/lib/wildwood";
-import { WILDWOOD_CONFIG } from "@/lib/wildwood";
-import { SYMBOL_ICON_SRC } from "@/lib/pixi/assets";
-import { wildwoodSound } from "@/lib/pixi/sound";
+import type { DragonforgeRoundResult, DragonforgeStep, SymbolType } from "@/lib/dragonforge";
+import { DRAGONFORGE_CONFIG } from "@/lib/dragonforge";
+import { dragonforgeSound } from "@/lib/pixi/sound";
 import {
-  WILDWOOD_BOARD_ASPECT,
-  WILDWOOD_BOARD_DESIGN_HEIGHT,
-  WILDWOOD_BOARD_DESIGN_WIDTH,
-  WildwoodPixiBoard,
-  type WildwoodBoardHandle
-} from "@/components/wildwood-pixi-board";
+  DRAGONFORGE_BOARD_ASPECT,
+  DRAGONFORGE_BOARD_DESIGN_HEIGHT,
+  DRAGONFORGE_BOARD_DESIGN_WIDTH,
+  DragonforgePixiBoard,
+  type DragonforgeBoardHandle
+} from "@/components/dragonforge-pixi-board";
 import { formatCredits } from "@/lib/currency";
 import { useCasinoRound, type WalletState } from "@/components/game-shell/use-casino-round";
 import { GameCabinet, BoardIconButton } from "@/components/game-shell/game-cabinet";
 import type { ReactNode } from "react";
 import { useCallback, useRef, useState } from "react";
 
-// Optional because WildwoodPixiBoard's onRoundComplete is typed over the base
-// WildwoodRoundResult — the play API always includes it now that play is
-// account-gated, but this stays a boundary check on the HTTP response.
-type PlayResult = WildwoodRoundResult & { wallet?: WalletState };
+// Optional because DragonforgePixiBoard's onRoundComplete is typed over the
+// base DragonforgeRoundResult — the play API always includes it now that
+// play is account-gated, but this stays a boundary check on the HTTP response.
+type PlayResult = DragonforgeRoundResult & { wallet?: WalletState };
 
-type StepInfo = { index: number; step: WildwoodStep; total: number };
+type StepInfo = { index: number; step: DragonforgeStep; total: number };
 
-export function WildwoodGame() {
+const SYMBOL_ORDER: SymbolType[] = [
+  "stone", "iron", "gold", "gem", "relic", "unstableRock", "dragonEgg", "miner", "prospector", "smith", "scout"
+];
+
+const SYMBOL_SWATCH: Record<SymbolType, string> = {
+  stone: "#9aa0a8",
+  iron: "#c08a5c",
+  gold: "#f5c542",
+  gem: "#22d3ee",
+  relic: "#c084fc",
+  unstableRock: "#c2410c",
+  dragonEgg: "#2dd4bf",
+  miner: "#f59e0b",
+  prospector: "#38bdf8",
+  smith: "#ef4444",
+  scout: "#a78bfa"
+};
+
+const SYMBOL_DISPLAY_NAME: Record<SymbolType, string> = {
+  stone: "Stone",
+  iron: "Iron",
+  gold: "Gold",
+  gem: "Gem",
+  relic: "Relic",
+  unstableRock: "Unstable Rock",
+  dragonEgg: "Dragon Egg",
+  miner: "Miner",
+  prospector: "Prospector",
+  smith: "Smith",
+  scout: "Scout"
+};
+
+export function DragonforgeGame() {
   const [muted, setMuted] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [stepInfo, setStepInfo] = useState<StepInfo | null>(null);
-  const boardRef = useRef<WildwoodBoardHandle>(null);
+  const boardRef = useRef<DragonforgeBoardHandle>(null);
 
   const cabinet = useCasinoRound<PlayResult>({
-    playEndpoint: "/api/wildwood/play",
-    allowedStakes: WILDWOOD_CONFIG.allowedStakes,
-    onBeforeStart: () => wildwoodSound.resume()
+    playEndpoint: "/api/dragonforge/play",
+    allowedStakes: DRAGONFORGE_CONFIG.allowedStakes,
+    onBeforeStart: () => dragonforgeSound.resume()
   });
 
   const round = cabinet.round;
 
-  const handleStepChange = useCallback((index: number, step: WildwoodStep, total: number) => {
+  const handleStepChange = useCallback((index: number, step: DragonforgeStep, total: number) => {
     setStepInfo({ index, step, total });
   }, []);
 
@@ -52,19 +83,19 @@ export function WildwoodGame() {
 
   const toggleSound = () => {
     const next = !muted;
-    wildwoodSound.setMuted(next);
+    dragonforgeSound.setMuted(next);
     setMuted(next);
   };
 
   return (
     <div className="flex h-full flex-col gap-6">
       <GameCabinet
-        gameName="Wildwood"
-        boardAspect={WILDWOOD_BOARD_ASPECT}
-        boardDesignWidth={WILDWOOD_BOARD_DESIGN_WIDTH}
-        boardDesignHeight={WILDWOOD_BOARD_DESIGN_HEIGHT}
+        gameName="Dragonforge"
+        boardAspect={DRAGONFORGE_BOARD_ASPECT}
+        boardDesignWidth={DRAGONFORGE_BOARD_DESIGN_WIDTH}
+        boardDesignHeight={DRAGONFORGE_BOARD_DESIGN_HEIGHT}
         board={
-          <WildwoodPixiBoard
+          <DragonforgePixiBoard
             ref={boardRef}
             round={round}
             stake={round?.stake ?? cabinet.effectiveStake}
@@ -108,10 +139,16 @@ export function WildwoodGame() {
               <dl className="space-y-3 text-sm">
                 <Metric label="Round" value={round.roundId} />
                 <Metric label="Stake" value={`${round.stake.toFixed(2)}x`} />
-                <Metric label="Spirit Seeds" value={`${round.spiritSeedsSeen}`} />
+                <Metric label="Dragon Eggs" value={`${round.dragonEggsSeen}`} />
                 <Metric label="Base win" value={`🪙 ${formatCredits(round.baseWin)}`} />
-                <Metric label="Bonus" value={round.bonus ? `🪙 ${formatCredits(round.bonus.bonusWin * round.stake)}` : "No"} />
-                {round.bonus ? <Metric label="Bonus peak" value={`${round.bonus.peakMultiplier}x · ${round.bonus.collectorsHeld} held`} /> : null}
+                <Metric label="Hoard" value={round.bonus ? `🪙 ${formatCredits(round.bonus.bonusWin * round.stake)}` : "No"} />
+                {round.bonus ? (
+                  <>
+                    <Metric label="Hoard peak" value={`${round.bonus.peakMultiplier}x · ${round.bonus.collectorsHeld} held`} />
+                    <Metric label="Delves" value={`${round.bonus.delvesUsed}`} />
+                    <Metric label="Dragon woke" value={round.bonus.dragonWoke ? "Yes" : "No — surfaced safely"} />
+                  </>
+                ) : null}
                 <Metric label="Total win" value={`🪙 ${formatCredits(round.cappedWin)}`} />
                 <Metric label="Uncapped" value={`🪙 ${formatCredits(round.uncappedWin)}`} />
                 <Metric label="Cap applied" value={round.capApplied ? "Yes" : "No"} />
@@ -130,7 +167,7 @@ export function WildwoodGame() {
                       type="button"
                       onClick={() => boardRef.current?.seek(index)}
                       className={`w-full rounded-xl border p-3 text-left transition ${
-                        index === stepInfo?.index ? "border-emerald-300/40 bg-emerald-400/10" : "border-white/10 bg-black/20 hover:border-white/20"
+                        index === stepInfo?.index ? "border-teal-300/40 bg-teal-400/10" : "border-white/10 bg-black/20 hover:border-white/20"
                       }`}
                     >
                       <span className="font-bold text-white">{index + 1}.</span> {step.message}
@@ -145,12 +182,15 @@ export function WildwoodGame() {
 
           <Panel title="Symbol guide">
             <ul className="grid grid-cols-2 gap-2 text-xs">
-              {(Object.keys(SYMBOL_ICON_SRC) as SymbolType[]).map((symbol) => (
+              {SYMBOL_ORDER.map((symbol) => (
                 <li key={symbol} className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 p-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={SYMBOL_ICON_SRC[symbol]} alt={symbol} className="h-8 w-8 shrink-0" />
+                  <span
+                    aria-hidden="true"
+                    className="h-8 w-8 shrink-0 rounded-full border border-white/15"
+                    style={{ backgroundColor: SYMBOL_SWATCH[symbol] }}
+                  />
                   <div className="min-w-0">
-                    <p className="truncate font-bold capitalize text-white">{symbol === "spiritSeed" ? "Spirit Seed" : symbol}</p>
+                    <p className="truncate font-bold text-white">{SYMBOL_DISPLAY_NAME[symbol]}</p>
                     <p className="truncate text-emerald-100/50">{symbolNote(symbol)}</p>
                   </div>
                 </li>
@@ -164,11 +204,11 @@ export function WildwoodGame() {
 }
 
 function symbolNote(symbol: SymbolType): string {
-  if (symbol === "spiritSeed") return "Persistent shared reward";
-  if (symbol === "rot") return "No value";
-  const collectorMultiplier = (WILDWOOD_CONFIG.collectorMultipliers as Partial<Record<SymbolType, number>>)[symbol];
+  if (symbol === "dragonEgg") return "Persistent shared reward";
+  if (symbol === "unstableRock") return "No value";
+  const collectorMultiplier = (DRAGONFORGE_CONFIG.collectorMultipliers as Partial<Record<SymbolType, number>>)[symbol];
   if (collectorMultiplier) return `Collector · ${collectorMultiplier}x`;
-  const value = WILDWOOD_CONFIG.symbolValues[symbol];
+  const value = DRAGONFORGE_CONFIG.symbolValues[symbol];
   return `Worth ${value.toFixed(3)}x`;
 }
 

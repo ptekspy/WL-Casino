@@ -1,4 +1,5 @@
 import type { CollectorType } from "../wildwood";
+import type { CollectorType as DragonforgeCollectorType } from "../dragonforge";
 
 /**
  * Tiny synthesized SFX engine — no audio files, everything is oscillators and
@@ -21,7 +22,8 @@ type NoiseOptions = {
   frequency?: number;
 };
 
-class WildwoodSound {
+/** Oscillator/gain-envelope plumbing shared by every game's sound engine — only the cue methods differ per game. */
+abstract class SlotSoundEngine {
   private ctx: AudioContext | null = null;
   private muted = false;
 
@@ -48,7 +50,7 @@ class WildwoodSound {
     return this.muted;
   }
 
-  private tone(freq: number, opts: ToneOptions = {}): void {
+  protected tone(freq: number, opts: ToneOptions = {}): void {
     if (this.muted) return;
     const ctx = this.getCtx();
     if (!ctx) return;
@@ -68,7 +70,7 @@ class WildwoodSound {
     osc.stop(start + duration + 0.02);
   }
 
-  private noiseBurst(opts: NoiseOptions = {}): void {
+  protected noiseBurst(opts: NoiseOptions = {}): void {
     if (this.muted) return;
     const ctx = this.getCtx();
     if (!ctx) return;
@@ -89,7 +91,9 @@ class WildwoodSound {
     src.connect(filter).connect(gainNode).connect(ctx.destination);
     src.start(start);
   }
+}
 
+class WildwoodSound extends SlotSoundEngine {
   private static readonly COLLECT_SCALE = [523.25, 587.33, 659.25, 698.46, 783.99, 880, 987.77, 1046.5];
 
   playCollect(streak = 0): void {
@@ -184,3 +188,99 @@ class WildwoodSound {
 }
 
 export const wildwoodSound = new WildwoodSound();
+
+class DragonforgeSound extends SlotSoundEngine {
+  private static readonly COLLECT_SCALE = [392, 440, 493.88, 523.25, 587.33, 659.25, 739.99, 830.61];
+
+  playCollect(streak = 0): void {
+    const scale = DragonforgeSound.COLLECT_SCALE;
+    this.tone(scale[Math.min(streak, scale.length - 1)], { type: "square", duration: 0.2, gain: 0.1 });
+    this.noiseBurst({ duration: 0.12, gain: 0.02, frequency: 500 });
+  }
+
+  playCascade(level = 0): void {
+    const lift = Math.max(0, Math.min(5, level));
+    this.noiseBurst({ duration: 0.3, gain: 0.05 + lift * 0.006, frequency: 250 + lift * 60 });
+    this.tone(160 + lift * 20, { type: "sawtooth", duration: 0.24, slideTo: 260 + lift * 34, gain: 0.045 + lift * 0.006 });
+  }
+
+  playEscalation(level: number): void {
+    const step = Math.max(0, Math.min(5, level));
+    this.tone(196 + step * 30, { type: "sawtooth", duration: 0.16, gain: 0.035 + step * 0.005 });
+  }
+
+  playTargetLock(symbol: DragonforgeCollectorType, order = 0): void {
+    const frequency: Record<DragonforgeCollectorType, number> = { miner: 440, prospector: 587.33, smith: 349.23, scout: 830.61 };
+    this.tone(frequency[symbol] * (1 + order * 0.045), { type: symbol === "scout" ? "sine" : "square", duration: 0.15, gain: 0.045 });
+  }
+
+  playCollectorImpact(symbol: DragonforgeCollectorType): void {
+    const frequency: Record<DragonforgeCollectorType, number> = { miner: 300, prospector: 460, smith: 260, scout: 700 };
+    this.tone(frequency[symbol], { type: "square", duration: 0.11, slideTo: frequency[symbol] * 1.22, gain: 0.06 });
+    this.noiseBurst({ duration: 0.14, gain: 0.035, frequency: frequency[symbol] * 1.1 });
+  }
+
+  playCollectorCelebrate(symbol: DragonforgeCollectorType): void {
+    const chord: Record<DragonforgeCollectorType, readonly [number, number]> = {
+      miner: [523.25, 659.25],
+      prospector: [587.33, 739.99],
+      smith: [349.23, 440],
+      scout: [880, 1108.73]
+    };
+    chord[symbol].forEach((freq, index) => this.tone(freq, { type: "triangle", duration: 0.2, gain: 0.045, delay: index * 0.06 }));
+  }
+
+  playEggHint(): void {
+    this.tone(660, { type: "sine", duration: 0.32, gain: 0.09 });
+    this.tone(830.61, { type: "sine", duration: 0.32, gain: 0.07, delay: 0.09 });
+  }
+
+  playEggShare(count: number): void {
+    for (let index = 0; index < Math.min(4, count); index += 1) {
+      this.tone(660 + index * 90, { type: "sine", duration: 0.28, gain: 0.055, delay: index * 0.07 });
+    }
+  }
+
+  playHoardTrigger(): void {
+    [196, 246.94, 311.13, 415.3].forEach((freq, i) => this.tone(freq, { type: "sawtooth", duration: 0.55, gain: 0.1, delay: i * 0.1 }));
+    this.noiseBurst({ duration: 0.5, gain: 0.07, frequency: 180 });
+  }
+
+  playDelve(index: number): void {
+    this.noiseBurst({ duration: 0.4, gain: 0.05, frequency: 300 - index * 8 });
+    this.tone(180 - index * 3, { type: "sine", duration: 0.35, slideTo: 300 - index * 4, gain: 0.05 });
+  }
+
+  playMultiplierUp(): void {
+    this.tone(587.33, { type: "square", duration: 0.13, gain: 0.07 });
+  }
+
+  playDragonWake(): void {
+    [220, 174.61, 146.83, 110].forEach((freq, i) => this.tone(freq, { type: "sawtooth", duration: 0.6, gain: 0.11, delay: i * 0.1 }));
+    this.noiseBurst({ duration: 0.7, gain: 0.09, frequency: 90 });
+  }
+
+  playHoardEnd(): void {
+    this.tone(349.23, { type: "sine", duration: 0.5, slideTo: 233.08, gain: 0.08 });
+  }
+
+  playGoodWin(): void {
+    [523.25, 659.25, 783.99].forEach((freq, i) => this.tone(freq, { type: "triangle", duration: 0.3, gain: 0.065, delay: i * 0.08 }));
+  }
+
+  playBigWin(): void {
+    [587.33, 698.46, 880, 1046.5].forEach((freq, i) => this.tone(freq, { type: "triangle", duration: 0.4, gain: 0.09, delay: i * 0.1 }));
+  }
+
+  playMegaWin(): void {
+    [440, 587.33, 698.46, 880, 1174.66].forEach((freq, i) => this.tone(freq, { type: "sawtooth", duration: 0.48, gain: 0.085, delay: i * 0.09 }));
+    this.noiseBurst({ duration: 0.48, gain: 0.055, frequency: 1200 });
+  }
+
+  playMaxWin(): void {
+    [440, 587.33, 698.46, 932.33, 1174.66].forEach((freq, i) => this.tone(freq, { type: "sawtooth", duration: 0.55, gain: 0.1, delay: i * 0.08 }));
+    this.noiseBurst({ duration: 0.6, gain: 0.07 });
+  }
+}
+
+export const dragonforgeSound = new DragonforgeSound();
