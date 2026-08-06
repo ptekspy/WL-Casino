@@ -3,11 +3,12 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Application, Container, Graphics, Sprite, Text, TextStyle, type Texture, type Ticker } from "pixi.js";
 import type { BoardCell, CollectorType, SymbolType, WildwoodRoundResult, WildwoodStep } from "@/lib/wildwood";
-import { WILDWOOD_CONFIG, buildFrames, formatCollectableValueLabel, getCascadeValueMultiplier, getScaledCollectableValue } from "@/lib/wildwood";
+import { WILDWOOD_CONFIG, buildFrames, getCascadeValueMultiplier, getScaledCollectableValue } from "@/lib/wildwood";
 import { WILDWOOD_TEXTURE_KEYS, getSymbolTexture, getWildwoodTexture, loadWildwoodAssets } from "@/lib/pixi/assets";
 import { Easing, TweenRunner } from "@/lib/pixi/tween";
 import { wildwoodSound } from "@/lib/pixi/sound";
 import { getWinPresentation, type WinPresentationTier } from "@/lib/pixi/presentation";
+import { formatCredits } from "@/lib/currency";
 
 const { width: COLS, height: ROWS } = WILDWOOD_CONFIG;
 const CELL = 100;
@@ -95,22 +96,22 @@ function getIdleMotion(symbol: SymbolType, time: number, phase: number): IdleMot
 }
 
 export type WildwoodBoardHandle = {
-  /** Instantly jumps to a step, cancelling any in-flight autoplay. */
+  /** Instantly jumps to a step. */
   seek: (stepIndex: number) => void;
   /** Instantly jumps to the final step of the current round. */
   skipToEnd: () => void;
-  /** Speeds up or restores the complete Pixi choreography without changing game math. */
-  setTurbo: (enabled: boolean) => void;
 };
 
 type WildwoodPixiBoardProps = {
   round: WildwoodRoundResult | null;
+  /** Drives the cash-value shown on tile labels — the resolved round's stake once one exists, otherwise the live selection. */
+  stake: number;
   onStepChange?: (stepIndex: number, step: WildwoodStep, totalSteps: number) => void;
   onRoundComplete?: (round: WildwoodRoundResult) => void;
 };
 
 export const WildwoodPixiBoard = forwardRef<WildwoodBoardHandle, WildwoodPixiBoardProps>(function WildwoodPixiBoard(
-  { round, onStepChange, onRoundComplete },
+  { round, stake, onStepChange, onRoundComplete },
   ref
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -123,11 +124,7 @@ export const WildwoodPixiBoard = forwardRef<WildwoodBoardHandle, WildwoodPixiBoa
     ref,
     () => ({
       seek: (index) => worldRef.current?.seek(index),
-      skipToEnd: () => worldRef.current?.skipToEnd(),
-      setTurbo: (enabled) => {
-        speedRef.current = enabled ? 1.65 : 1;
-        worldRef.current?.setSpeed(speedRef.current);
-      }
+      skipToEnd: () => worldRef.current?.skipToEnd()
     }),
     []
   );
@@ -192,6 +189,11 @@ export const WildwoodPixiBoard = forwardRef<WildwoodBoardHandle, WildwoodPixiBoa
     worldRef.current?.playRound(round, onStepChange, onRoundComplete);
   }, [ready, round, onStepChange, onRoundComplete]);
 
+  useEffect(() => {
+    if (!ready) return;
+    worldRef.current?.setStake(stake);
+  }, [ready, stake]);
+
   return <div ref={hostRef} className="relative h-full w-full overflow-hidden rounded-[1.75rem]" />;
 });
 
@@ -211,6 +213,8 @@ type CellView = {
   flash: Graphics;
   valueBg: Graphics;
   valueLabel: Text;
+  cascadeBadgeBg: Graphics;
+  cascadeBadgeLabel: Text;
   targetsBg: Graphics;
   targetIcons: Sprite[];
   targetsAnyLabel: Text;
@@ -231,6 +235,7 @@ type BoardWorld = {
   seek: (index: number) => void;
   skipToEnd: () => void;
   setSpeed: (scale: number) => void;
+  setStake: (stake: number) => void;
   destroy: () => void;
 };
 
@@ -371,6 +376,7 @@ function buildWorld(app: Application): BoardWorld {
     }
   }
   let collectableValueMultiplier = 1;
+  let currentStake = 1;
 
   // Cinematic center spotlight — warms and focuses the middle of the grid.
   const spotlight = new Sprite(getWildwoodTexture(WILDWOOD_TEXTURE_KEYS.spotlight));
@@ -457,6 +463,8 @@ function buildWorld(app: Application): BoardWorld {
     cell.targetsBg.visible = true;
     for (const icon of cell.targetIcons) icon.visible = false;
     cell.targetsAnyLabel.visible = false;
+    // drawCascadeBadge decides visibility (only shown above 1x) — default hidden here.
+    cell.cascadeBadgeLabel.visible = false;
   }
 
   function hideCellSymbolVisualState(cell: CellView) {
@@ -468,6 +476,8 @@ function buildWorld(app: Application): BoardWorld {
     cell.targetsBg.visible = false;
     for (const icon of cell.targetIcons) icon.visible = false;
     cell.targetsAnyLabel.visible = false;
+    cell.cascadeBadgeBg.clear();
+    cell.cascadeBadgeLabel.visible = false;
     cell.flash.clear();
   }
 
@@ -494,6 +504,7 @@ function buildWorld(app: Application): BoardWorld {
     cell.baseShadowScaleY = cell.shadowSprite.scale.y;
     drawGlow(cell);
     drawValueLabel(cell);
+    drawCascadeBadge(cell);
     drawCollectorTargets(cell);
   }
 
@@ -536,8 +547,10 @@ function buildWorld(app: Application): BoardWorld {
 
   /**
    * Puts each symbol's worth right on the tile — collectors get a bold gold
-   * "this wins" multiplier chip, plain symbols get a quiet value chip, and rot
-   * gets nothing at all, so its worthlessness reads without checking the legend.
+   * "this wins" multiplier chip, plain symbols get a quiet cash-value chip
+   * (what this tile actually pays at the current stake and cascade tier,
+   * not an abstract paytable multiplier), and rot gets nothing at all, so
+   * its worthlessness reads without checking the legend.
    */
   function drawValueLabel(cell: CellView, emphasisColor?: number) {
     cell.valueBg.clear();
@@ -551,7 +564,7 @@ function buildWorld(app: Application): BoardWorld {
     const isSeed = symbol === "spiritSeed";
     const label = isCollector
       ? `${WILDWOOD_CONFIG.collectorMultipliers[symbol]}x`
-      : formatCollectableValueLabel(getScaledCollectableValue(symbol, collectableValueMultiplier));
+      : `🪙${formatCredits(getScaledCollectableValue(symbol, collectableValueMultiplier) * currentStake)}`;
     cell.valueLabel.text = label;
     cell.valueLabel.style.fill = isCollector ? 0x2a1704 : emphasisColor ?? (isSeed ? 0xcffafe : 0xf8f1dc);
     cell.valueLabel.alpha = isCollector || emphasisColor !== undefined ? 1 : isSeed ? 0.92 : 0.72;
@@ -568,12 +581,48 @@ function buildWorld(app: Application): BoardWorld {
       });
   }
 
-  function setCollectableValueMultiplier(multiplier: number) {
-    collectableValueMultiplier = multiplier;
+  /**
+   * Top-right corner badge showing the cascade boost itself (the "x" the
+   * bottom cash label just got folded into) — collectors carry their own
+   * top-center target chip already, so this only ever appears on plain
+   * symbols and Spirit Seeds, and only once a cascade has actually boosted
+   * the payout (hidden at the 1x baseline to keep the idle/first-cascade
+   * board uncluttered).
+   */
+  function drawCascadeBadge(cell: CellView) {
+    cell.cascadeBadgeBg.clear();
+    cell.cascadeBadgeLabel.visible = false;
+    if (!cell.symbol || cell.symbol === "rot" || isCollectorSymbol(cell.symbol)) return;
+    if (collectableValueMultiplier <= 1) return;
+
+    const text = `${collectableValueMultiplier}x`;
+    cell.cascadeBadgeLabel.text = text;
+    cell.cascadeBadgeLabel.visible = true;
+    const width = cell.cascadeBadgeLabel.width + 10;
+    cell.cascadeBadgeLabel.position.set(CELL - 6, 8);
+    cell.cascadeBadgeBg
+      .roundRect(CELL - width - 4, 4, width, 16, 8)
+      .fill({ color: 0x3a1f00, alpha: 0.88 })
+      .stroke({ width: 1, color: 0xf5c542, alpha: 0.65 });
+  }
+
+  /** Both the cascade tier and the live stake feed the same tile displays — one shared refresh. */
+  function refreshValueDisplays() {
     for (const cell of cells) {
       if (!cell.symbol || cell.symbol === "rot" || isCollectorSymbol(cell.symbol)) continue;
       drawValueLabel(cell);
+      drawCascadeBadge(cell);
     }
+  }
+
+  function setCollectableValueMultiplier(multiplier: number) {
+    collectableValueMultiplier = multiplier;
+    refreshValueDisplays();
+  }
+
+  function setStake(stake: number) {
+    currentStake = stake;
+    refreshValueDisplays();
   }
 
   async function animateCollectableValueIncrease(
@@ -1944,7 +1993,7 @@ function buildWorld(app: Application): BoardWorld {
   ambientField.setMode("idle");
   for (const cell of cells) cell.container.alpha = 0;
 
-  return { resize, playRound, seek, skipToEnd, setSpeed, destroy };
+  return { resize, playRound, seek, skipToEnd, setSpeed, setStake, destroy };
 }
 
 /** Full inset tile depth replaces the repeated half-circle overlay that made the grid look like generic UI. */
@@ -2088,6 +2137,25 @@ function buildCellView(x: number, y: number): CellView {
   valueLabel.position.set(CELL / 2, CELL - 13);
   container.addChild(valueLabel);
 
+  // Cascade-boost badge — top-right corner. Only non-collector tiles show it
+  // (collectors already have their own top-center target chip), and only
+  // once the cascade multiplier climbs past 1x — see drawCascadeBadge.
+  const cascadeBadgeBg = new Graphics();
+  container.addChild(cascadeBadgeBg);
+
+  const cascadeBadgeLabel = new Text({
+    text: "",
+    style: new TextStyle({
+      fill: 0xffe9a8,
+      fontSize: 10,
+      fontWeight: "900",
+      fontFamily: "system-ui, -apple-system, sans-serif"
+    })
+  });
+  cascadeBadgeLabel.anchor.set(1, 0);
+  cascadeBadgeLabel.visible = false;
+  container.addChild(cascadeBadgeLabel);
+
   const targetsBg = new Graphics();
   container.addChild(targetsBg);
 
@@ -2131,6 +2199,8 @@ function buildCellView(x: number, y: number): CellView {
     flash,
     valueBg,
     valueLabel,
+    cascadeBadgeBg,
+    cascadeBadgeLabel,
     targetsBg,
     targetIcons,
     targetsAnyLabel,

@@ -2,6 +2,7 @@ import { WILDWOOD_CONFIG, isAllowedStake, resolveWildwoodRound } from "@/lib/wil
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { InsufficientBalanceError, settleRound } from "@/lib/wallet";
+import { ageFromDateOfBirth, maxStakeForAge } from "@/lib/uk-compliance";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,24 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Sign up or log in to play." },
       { status: 401, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
+  // UK stake limits: this is the real enforcement boundary (the signup-form
+  // and client-side dropdown filtering are UX niceties, not what's relied on).
+  const dateOfBirth = session.user.dateOfBirth as string | null | undefined;
+  const age = dateOfBirth ? ageFromDateOfBirth(dateOfBirth) : 0;
+  if (age < 18) {
+    return NextResponse.json(
+      { error: "You must be 18 or older, with a date of birth on file, to play." },
+      { status: 403, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+  const maxStake = maxStakeForAge(age);
+  if (requestedStake > maxStake) {
+    return NextResponse.json(
+      { error: `Stake exceeds the ${maxStake.toFixed(2)} limit for your age group.` },
+      { status: 400, headers: { "Cache-Control": "no-store" } }
     );
   }
 

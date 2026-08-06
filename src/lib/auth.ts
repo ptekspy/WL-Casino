@@ -34,6 +34,19 @@ export const auth = betterAuth({
         required: false,
         defaultValue: false,
         input: false
+      },
+      // Client-settable (unlike the wallet fields above) — collected at
+      // signup and, for accounts that predate this field, via /account.
+      // Drives the UK age-banded stake cap in src/lib/uk-compliance.ts.
+      // Not DB-required (nullable): a NOT NULL column can't be added to a
+      // table that already has rows without a default, and the app already
+      // treats a missing value as "needs to be set before playing" — see
+      // the needsDateOfBirth gate in wildwood-game.tsx. The signup form
+      // still requires it for new accounts via its own client validation.
+      dateOfBirth: {
+        type: "string",
+        required: false,
+        input: true
       }
     }
   },

@@ -14,18 +14,19 @@ import {
 } from "@/components/wildwood-pixi-board";
 import { authClient } from "@/lib/auth-client";
 import { formatCredits } from "@/lib/currency";
+import { MIN_ROUND_MS, maxStakeForDateOfBirth } from "@/lib/uk-compliance";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
- * Everything around the board (the fullscreen game shell bar, cabinet, replay
- * bar, paddings) that eats into viewport height. The board's max-width is
- * derived from whatever's left of 100dvh so the play button never scrolls
- * off-screen on short viewports. Tuned against the live layout — re-check
- * after touching the shell bar or cabinet.
+ * Everything around the board (the fullscreen game shell bar, cabinet
+ * paddings) that eats into viewport height. The board's max-width is derived
+ * from whatever's left of 100dvh so the play button never scrolls off-screen
+ * on short viewports. Tuned against the live layout — re-check after
+ * touching the shell bar or cabinet.
  */
-const BOARD_HEIGHT_BUDGET_PX = 235;
+const BOARD_HEIGHT_BUDGET_PX = 150;
 
 type WalletState = { balance: number; bonusSpinsRemaining: number; bonusSpinStake: number; isBonusSpin: boolean };
 // Optional because WildwoodPixiBoard's onRoundComplete is typed over the base
@@ -52,14 +53,15 @@ type StepInfo = { index: number; step: WildwoodStep; total: number };
 export function WildwoodGame() {
   const { data: session, isPending: sessionPending, refetch: refetchSession } = authClient.useSession();
   const isLoggedIn = Boolean(session);
+  const maxStake = maxStakeForDateOfBirth((session?.user.dateOfBirth as string | undefined) ?? null);
+  const needsDateOfBirth = isLoggedIn && maxStake === 0;
+  const allowedStakes = WILDWOOD_CONFIG.allowedStakes.filter((option) => option <= maxStake);
 
   const [demoBalance, setDemoBalance] = useState(0);
   const [stake, setStake] = useState(1);
   const [displayedWin, setDisplayedWin] = useState(0);
   const [stepInfo, setStepInfo] = useState<StepInfo | null>(null);
   const [muted, setMuted] = useState(false);
-  const [turbo, setTurbo] = useState(false);
-  const [autoPlay, setAutoPlay] = useState(false);
   const [roundPlaying, setRoundPlaying] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [bonusSpinsRemaining, setBonusSpinsRemaining] = useState(0);
@@ -68,11 +70,10 @@ export function WildwoodGame() {
   const boardRef = useRef<WildwoodBoardHandle>(null);
   const balanceRef = useRef(0);
   const stakeRef = useRef(1);
-  const autoPlayRef = useRef(false);
   const roundPlayingRef = useRef(false);
-  const turboRef = useRef(false);
   const bonusSpinsRemainingRef = useRef(0);
-  const autoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const roundStartRef = useRef(0);
+  const preSpinBalanceRef = useRef(0);
 
   // Seed the wallet from the account on login/logout. Mid-session updates
   // (deposits, spins) flow through the play/deposit responses instead, so
@@ -91,95 +92,77 @@ export function WildwoodGame() {
 
   const mutation = useMutation({
     mutationFn: playWildwood,
-    onMutate: () => {
+    onMutate: (staked) => {
+      roundStartRef.current = Date.now();
       roundPlayingRef.current = true;
       setRoundPlaying(true);
-      // Balance/bonus state comes authoritatively from the play response
-      // (handleRoundComplete), since the server may charge a different
-      // (bonus) stake than the one requested — no optimistic update here.
+
+      // Deduct immediately so the balance visibly moves the instant Play is
+      // pressed — handleRoundComplete overwrites this with the server's
+      // authoritative figure once the response lands, so this is just a
+      // same-frame preview, not a second source of truth.
+      const isBonusSpin = bonusSpinsRemainingRef.current > 0;
+      preSpinBalanceRef.current = balanceRef.current;
+      const optimisticBalance = Number((balanceRef.current - (isBonusSpin ? 0 : staked)).toFixed(2));
+      balanceRef.current = optimisticBalance;
+      setDemoBalance(optimisticBalance);
+
       setDisplayedWin(0);
       setStepInfo(null);
     },
     onError: () => {
+      balanceRef.current = preSpinBalanceRef.current;
+      setDemoBalance(preSpinBalanceRef.current);
       roundPlayingRef.current = false;
       setRoundPlaying(false);
-      autoPlayRef.current = false;
-      setAutoPlay(false);
     }
   });
 
   const round = mutation.data ?? null;
-  const replayEnabled = Boolean(round && stepInfo && stepInfo.total > 1);
+  const effectiveStake = bonusSpinsRemaining > 0 ? bonusSpinStake : stake;
 
   const startRound = useCallback(() => {
-    if (!isLoggedIn || mutation.isPending || roundPlayingRef.current) return;
+    if (!isLoggedIn || needsDateOfBirth || mutation.isPending || roundPlayingRef.current) return;
     const currentStake = stakeRef.current;
     const hasBonusSpin = bonusSpinsRemainingRef.current > 0;
-    if (!hasBonusSpin && balanceRef.current < currentStake) {
-      autoPlayRef.current = false;
-      setAutoPlay(false);
-      return;
-    }
+    if (!hasBonusSpin && balanceRef.current < currentStake) return;
     wildwoodSound.resume();
     mutation.mutate(currentStake);
-  }, [isLoggedIn, mutation]);
+  }, [isLoggedIn, needsDateOfBirth, mutation]);
 
   const handleStepChange = useCallback((index: number, step: WildwoodStep, total: number) => {
     setStepInfo({ index, step, total });
   }, []);
 
-  const handleRoundComplete = useCallback(
-    (completed: PlayResult) => {
-      // Play is account-gated server-side (401 without a session), so a
-      // completed round always carries wallet state; `wallet` is only
-      // optional in the type to satisfy WildwoodPixiBoard's base round type.
-      const wallet = completed.wallet as WalletState;
-      balanceRef.current = wallet.balance;
-      setDemoBalance(wallet.balance);
-      bonusSpinsRemainingRef.current = wallet.bonusSpinsRemaining;
-      setBonusSpinsRemaining(wallet.bonusSpinsRemaining);
-      setBonusSpinStake(wallet.bonusSpinStake);
-      // Keep the header's balance pill (a separate useSession() subscriber) in sync.
-      void refetchSession();
-      setDisplayedWin(completed.cappedWin);
+  const handleRoundComplete = useCallback((completed: PlayResult) => {
+    // Play is account-gated server-side (401 without a session), so a
+    // completed round always carries wallet state; `wallet` is only
+    // optional in the type to satisfy WildwoodPixiBoard's base round type.
+    const wallet = completed.wallet as WalletState;
+    balanceRef.current = wallet.balance;
+    setDemoBalance(wallet.balance);
+    bonusSpinsRemainingRef.current = wallet.bonusSpinsRemaining;
+    setBonusSpinsRemaining(wallet.bonusSpinsRemaining);
+    setBonusSpinStake(wallet.bonusSpinStake);
+    // Keep the header's balance pill (a separate useSession() subscriber) in sync.
+    void refetchSession();
+    setDisplayedWin(completed.cappedWin);
+
+    // UK minimum-round-speed floor: results display immediately above, but
+    // the Play button doesn't re-enable until at least MIN_ROUND_MS have
+    // passed since this round started, regardless of how fast it resolved.
+    const elapsed = Date.now() - roundStartRef.current;
+    const remaining = Math.max(0, MIN_ROUND_MS - elapsed);
+    const releasePlayButton = () => {
       roundPlayingRef.current = false;
       setRoundPlaying(false);
-
-      const canAffordNext = bonusSpinsRemainingRef.current > 0 || balanceRef.current >= stakeRef.current;
-      if (autoPlayRef.current && canAffordNext) {
-        autoTimerRef.current = setTimeout(startRound, turboRef.current ? 220 : 650);
-      } else if (autoPlayRef.current) {
-        autoPlayRef.current = false;
-        setAutoPlay(false);
-      }
-    },
-    [startRound, refetchSession]
-  );
-
-  useEffect(() => {
-    boardRef.current?.setTurbo(turbo);
-    turboRef.current = turbo;
-  }, [turbo]);
-
-  useEffect(
-    () => () => {
-      if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
-    },
-    []
-  );
-
-  const toggleAutoplay = () => {
-    const next = !autoPlayRef.current;
-    autoPlayRef.current = next;
-    setAutoPlay(next);
-    if (!next && autoTimerRef.current) {
-      clearTimeout(autoTimerRef.current);
-      autoTimerRef.current = null;
+    };
+    if (remaining > 0) {
+      setTimeout(releasePlayButton, remaining);
+    } else {
+      releasePlayButton();
     }
-    if (next && !roundPlayingRef.current && !mutation.isPending) {
-      autoTimerRef.current = setTimeout(startRound, 0);
-    }
-  };
+  }, [refetchSession]);
 
   const toggleSound = () => {
     const next = !muted;
@@ -197,7 +180,18 @@ export function WildwoodGame() {
             maxWidth: `min(42rem, calc((100dvh - ${BOARD_HEIGHT_BUDGET_PX}px) * ${WILDWOOD_BOARD_DESIGN_WIDTH} / ${WILDWOOD_BOARD_DESIGN_HEIGHT}))`
           }}
         >
-          <WildwoodPixiBoard ref={boardRef} round={round} onStepChange={handleStepChange} onRoundComplete={handleRoundComplete} />
+          <WildwoodPixiBoard
+            ref={boardRef}
+            round={round}
+            stake={round?.stake ?? effectiveStake}
+            onStepChange={handleStepChange}
+            onRoundComplete={handleRoundComplete}
+          />
+
+          <div className="absolute right-3 top-3 z-10 flex gap-2">
+            <BoardIconButton icon={muted ? "🔇" : "🔊"} label={muted ? "Unmute" : "Mute"} active={!muted} onClick={toggleSound} />
+            <BoardIconButton icon="i" label="Info" active={showInfo} onClick={() => setShowInfo((value) => !value)} />
+          </div>
         </div>
 
         <div className="mx-auto mt-3 w-full max-w-2xl rounded-[1.75rem] border border-amber-200/15 bg-[linear-gradient(180deg,rgba(52,33,15,0.94),rgba(7,17,12,0.98))] p-3 shadow-[inset_0_1px_0_rgba(255,245,200,0.12),0_16px_30px_-18px_rgba(0,0,0,0.9)]">
@@ -220,6 +214,19 @@ export function WildwoodGame() {
                 </Link>
               </div>
             </div>
+          ) : needsDateOfBirth ? (
+            <div className="mb-3 flex flex-col items-center gap-2 rounded-xl border border-amber-200/30 bg-amber-300/10 px-3 py-3 text-center">
+              <p className="text-sm font-black text-white">Add your date of birth to play</p>
+              <p className="text-xs text-emerald-100/60">
+                UK rules cap stakes by age — 18-24 is {formatCredits(2)}, 25+ is {formatCredits(5)}. We only need this once.
+              </p>
+              <Link
+                href="/account"
+                className="mt-1 rounded-full border border-amber-200/30 bg-gradient-to-b from-emerald-400 to-emerald-600 px-4 py-2 text-xs font-black text-emerald-950 transition hover:brightness-110"
+              >
+                Go to account
+              </Link>
+            </div>
           ) : bonusSpinsRemaining > 0 ? (
             <div className="mb-3 flex items-center justify-center gap-2 rounded-xl border border-amber-200/30 bg-amber-300/10 px-3 py-2 text-xs font-black uppercase tracking-wide text-amber-100">
               <span aria-hidden="true">🎁</span>
@@ -227,8 +234,28 @@ export function WildwoodGame() {
             </div>
           ) : null}
 
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-[1fr_1fr_auto_1fr_1fr] sm:items-center">
-            <CabinetMetric label="Balance" value={formatCredits(demoBalance)} />
+          <div className="grid grid-cols-3 items-center gap-2 sm:gap-3">
+            <div className="flex flex-col gap-2">
+              <CabinetMetric label="Balance" value={formatCredits(demoBalance)} />
+              <CabinetMetric label="Win" value={formatCredits(displayedWin)} compact />
+            </div>
+
+            <button
+              type="button"
+              onClick={startRound}
+              disabled={
+                !isLoggedIn ||
+                needsDateOfBirth ||
+                roundPlaying ||
+                mutation.isPending ||
+                (bonusSpinsRemaining === 0 && demoBalance < stake)
+              }
+              aria-label="Play Wildwood"
+              className="group relative mx-auto flex h-20 w-20 items-center justify-center rounded-full border-4 border-amber-100/60 bg-[radial-gradient(circle_at_35%_25%,#d1fae5_0%,#6ee7b7_22%,#10b981_52%,#065f46_78%,#032d22_100%)] text-3xl text-emerald-950 shadow-[inset_0_3px_6px_rgba(255,255,255,0.65),inset_0_-8px_15px_rgba(0,0,0,0.45),0_0_0_5px_rgba(28,18,6,0.9),0_10px_24px_rgba(16,185,129,0.32)] transition hover:brightness-110 active:translate-y-0.5 disabled:cursor-not-allowed disabled:grayscale disabled:opacity-45"
+            >
+              <span className="absolute inset-2 rounded-full border border-white/35" aria-hidden="true" />
+              <span className="relative translate-x-0.5">{roundPlaying ? "✦" : "▶"}</span>
+            </button>
 
             <label className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
               <span className="block text-[10px] font-black uppercase tracking-[0.16em] text-emerald-200/45">Stake</span>
@@ -239,62 +266,16 @@ export function WildwoodGame() {
                   stakeRef.current = next;
                   setStake(next);
                 }}
-                disabled={!isLoggedIn || roundPlaying || autoPlay || bonusSpinsRemaining > 0}
+                disabled={!isLoggedIn || needsDateOfBirth || roundPlaying || bonusSpinsRemaining > 0}
                 className="mt-0.5 w-full bg-transparent text-base font-black tabular-nums text-amber-100 outline-none disabled:opacity-50"
               >
-                {WILDWOOD_CONFIG.allowedStakes.map((option) => (
+                {allowedStakes.map((option) => (
                   <option key={option} value={option} className="bg-neutral-950">
                     {option.toFixed(2)}
                   </option>
                 ))}
               </select>
             </label>
-
-            <button
-              type="button"
-              onClick={startRound}
-              disabled={!isLoggedIn || roundPlaying || mutation.isPending || (bonusSpinsRemaining === 0 && demoBalance < stake)}
-              aria-label="Play Wildwood"
-              className="group relative col-start-2 row-start-2 mx-auto flex h-20 w-20 items-center justify-center rounded-full border-4 border-amber-100/60 bg-[radial-gradient(circle_at_35%_25%,#d1fae5_0%,#6ee7b7_22%,#10b981_52%,#065f46_78%,#032d22_100%)] text-3xl text-emerald-950 shadow-[inset_0_3px_6px_rgba(255,255,255,0.65),inset_0_-8px_15px_rgba(0,0,0,0.45),0_0_0_5px_rgba(28,18,6,0.9),0_10px_24px_rgba(16,185,129,0.32)] transition hover:brightness-110 active:translate-y-0.5 disabled:cursor-not-allowed disabled:grayscale disabled:opacity-45 sm:col-start-3 sm:row-start-1"
-            >
-              <span className="absolute inset-2 rounded-full border border-white/35" aria-hidden="true" />
-              <span className="relative translate-x-0.5">{roundPlaying ? "✦" : "▶"}</span>
-            </button>
-
-            <CabinetMetric label="Win" value={formatCredits(displayedWin)} />
-            <CabinetMetric label="Mode" value={autoPlay ? "AUTO" : turbo ? "TURBO" : "NORMAL"} compact />
-          </div>
-
-          <div className="mt-3 grid grid-cols-4 gap-2 border-t border-white/10 pt-3">
-            <DeckButton label="Auto" icon="↻" active={autoPlay} disabled={!isLoggedIn} onClick={toggleAutoplay} />
-            <DeckButton label="Turbo" icon="⚡" active={turbo} onClick={() => setTurbo((value) => !value)} />
-            <DeckButton label={muted ? "Muted" : "Sound"} icon={muted ? "🔇" : "🔊"} active={!muted} onClick={toggleSound} />
-            <DeckButton label="Info" icon="i" active={showInfo} onClick={() => setShowInfo((value) => !value)} />
-          </div>
-        </div>
-
-        <div className="mx-auto mt-3 w-full max-w-2xl rounded-xl border border-white/10 bg-black/20 px-3 py-2">
-          <div className="flex items-center gap-3">
-            <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-emerald-200/45">Replay</span>
-            <input
-              type="range"
-              min={0}
-              max={Math.max(0, (stepInfo?.total ?? 1) - 1)}
-              value={stepInfo?.index ?? 0}
-              onChange={(event) => boardRef.current?.seek(Number(event.target.value))}
-              disabled={!replayEnabled || roundPlaying}
-              className="h-1 w-full cursor-pointer appearance-none rounded-full bg-white/15 accent-emerald-300 disabled:cursor-not-allowed disabled:opacity-30"
-              aria-label="Replay step"
-            />
-            <span className="shrink-0 text-xs font-bold tabular-nums text-emerald-100/60">{stepInfo ? `${stepInfo.index + 1}/${stepInfo.total}` : "–/–"}</span>
-            <button
-              type="button"
-              onClick={() => boardRef.current?.skipToEnd()}
-              disabled={!replayEnabled || !roundPlaying}
-              className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs font-bold text-emerald-100/70 transition hover:border-emerald-300/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              Skip ▸▸
-            </button>
           </div>
         </div>
 
@@ -372,27 +353,25 @@ function CabinetMetric({ label, value, compact = false }: Readonly<{ label: stri
   );
 }
 
-function DeckButton({
-  label,
+function BoardIconButton({
   icon,
+  label,
   active,
-  disabled = false,
   onClick
-}: Readonly<{ label: string; icon: string; active: boolean; disabled?: boolean; onClick: () => void }>) {
+}: Readonly<{ icon: string; label: string; active: boolean; onClick: () => void }>) {
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={disabled}
+      aria-label={label}
       aria-pressed={active}
-      className={`rounded-xl border px-2 py-2 text-xs font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-40 ${
+      className={`flex h-9 w-9 items-center justify-center rounded-full border text-sm font-black backdrop-blur transition ${
         active
-          ? "border-emerald-200/40 bg-emerald-300/15 text-emerald-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_0_14px_rgba(16,185,129,0.12)]"
-          : "border-white/10 bg-black/25 text-emerald-100/45 hover:border-white/20 hover:text-emerald-100/75"
+          ? "border-emerald-200/40 bg-emerald-300/15 text-emerald-100"
+          : "border-white/15 bg-black/40 text-white/70 hover:bg-black/60 hover:text-white"
       }`}
     >
-      <span className="mr-1 text-sm" aria-hidden="true">{icon}</span>
-      {label}
+      <span aria-hidden="true">{icon}</span>
     </button>
   );
 }

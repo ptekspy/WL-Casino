@@ -210,12 +210,6 @@ export function getScaledCollectableValue(symbol: SymbolType, multiplier: number
   return Number((WILDWOOD_CONFIG.symbolValues[symbol] * safeMultiplier).toFixed(6));
 }
 
-/** Keeps exact fractional values such as 0.0375x visible instead of rounding to 0.04x. */
-export function formatCollectableValueLabel(value: number): string {
-  const formatted = value.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
-  return formatted + "x";
-}
-
 const { width, height } = WILDWOOD_CONFIG;
 const BOARD_SIZE = width * height;
 

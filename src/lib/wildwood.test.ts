@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import type { BoardCell, SymbolType } from "./wildwood";
-import { WILDWOOD_CONFIG, applyChanges, formatCollectableValueLabel, getCascadeValueMultiplier, getScaledCollectableValue, isAllowedStake, resolveCollection, resolveWildwoodRound, simulateWildwood } from "./wildwood";
+import { WILDWOOD_CONFIG, applyChanges, getCascadeValueMultiplier, getScaledCollectableValue, isAllowedStake, resolveCollection, resolveWildwoodRound, simulateWildwood } from "./wildwood";
 
 /**
  * Sample size for the math guards. `simulateWildwood` is deterministic for a
@@ -50,14 +50,12 @@ describe("Wildwood engine", () => {
     }
   });
 
-  it("increases collectable values by 50% per cascade and formats exact labels", () => {
+  it("increases collectable values by 50% per cascade", () => {
     expect(WILDWOOD_CONFIG.cascadeMultipliers).toEqual([1, 1.5, 2, 2.5, 3, 3.5]);
     expect(getCascadeValueMultiplier(1)).toBe(1);
     expect(getCascadeValueMultiplier(4)).toBe(2.5);
     expect(getCascadeValueMultiplier(99)).toBe(3.5);
     expect(getScaledCollectableValue("leaf", getCascadeValueMultiplier(2))).toBe(0.0375);
-    expect(formatCollectableValueLabel(0.0375)).toBe("0.0375x");
-    expect(formatCollectableValueLabel(1.75)).toBe("1.75x");
   });
 
   it("only accepts configured stakes", () => {

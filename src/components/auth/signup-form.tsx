@@ -5,21 +5,28 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
 import { Field, FIELD_INPUT_CLASS } from "@/components/auth/auth-field";
+import { MIN_PLAYER_AGE, ageFromDateOfBirth } from "@/lib/uk-compliance";
 
 export function SignupForm() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
-    setSubmitting(true);
 
-    const { error: signUpError } = await authClient.signUp.email({ name, email, password });
+    if (ageFromDateOfBirth(dateOfBirth) < MIN_PLAYER_AGE) {
+      setError(`You must be ${MIN_PLAYER_AGE} or older to create an account.`);
+      return;
+    }
+
+    setSubmitting(true);
+    const { error: signUpError } = await authClient.signUp.email({ name, email, password, dateOfBirth });
 
     setSubmitting(false);
     if (signUpError) {
@@ -54,6 +61,17 @@ export function SignupForm() {
           onChange={(event) => setEmail(event.target.value)}
           className={FIELD_INPUT_CLASS}
           autoComplete="email"
+        />
+      </Field>
+      <Field label="Date of birth" htmlFor="dateOfBirth">
+        <input
+          id="dateOfBirth"
+          type="date"
+          required
+          value={dateOfBirth}
+          onChange={(event) => setDateOfBirth(event.target.value)}
+          className={FIELD_INPUT_CLASS}
+          autoComplete="bday"
         />
       </Field>
       <Field label="Password" htmlFor="password">

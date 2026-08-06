@@ -6,6 +6,8 @@ import { auth } from "@/lib/auth";
 import { formatCredits } from "@/lib/currency";
 import { DepositPanel } from "@/components/account/deposit-panel";
 import { SignOutButton } from "@/components/account/sign-out-button";
+import { DateOfBirthForm } from "@/components/account/date-of-birth-form";
+import { ageFromDateOfBirth, maxStakeForAge } from "@/lib/uk-compliance";
 
 export const metadata: Metadata = { title: "Account" };
 
@@ -18,6 +20,8 @@ export default async function AccountPage() {
   const bonusSpinsRemaining = user.bonusSpinsRemaining ?? 0;
   const bonusSpinStake = user.bonusSpinStake ?? 0;
   const hasDeposited = user.hasDeposited ?? false;
+  const dateOfBirth = user.dateOfBirth as string | null | undefined;
+  const maxStake = dateOfBirth ? maxStakeForAge(ageFromDateOfBirth(dateOfBirth)) : 0;
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-10 sm:px-6 lg:px-8">
@@ -26,11 +30,19 @@ export default async function AccountPage() {
         <p className="mt-1 text-sm text-emerald-100/60">{user.email}</p>
       </div>
 
+      {!dateOfBirth ? <DateOfBirthForm /> : null}
+
       <div className="grid gap-4 sm:grid-cols-3">
         <SummaryTile label="Balance" value={`🪙 ${formatCredits(balance)}`} />
         <SummaryTile label="Bonus spins left" value={`${bonusSpinsRemaining}`} />
         <SummaryTile label="Bonus stake" value={bonusSpinsRemaining > 0 ? `${formatCredits(bonusSpinStake)} / spin` : "—"} />
       </div>
+
+      {dateOfBirth ? (
+        <p className="-mt-2 text-xs text-emerald-100/45">
+          Stake limit: {formatCredits(maxStake)} per spin, based on your age (UK online slots rule).
+        </p>
+      ) : null}
 
       <DepositPanel hasDeposited={hasDeposited} />
 
