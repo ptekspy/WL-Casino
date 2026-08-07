@@ -21,17 +21,28 @@ type WalletState = {
   bonusSpinStake: number;
 };
 
-const getWallet = db.prepare<[string], WalletRow>(
-  "SELECT balance, bonusSpinsRemaining, bonusSpinStake, hasDeposited FROM user WHERE id = ?"
-);
+/**
+ * Prepare wallet statements lazily. Next's production build imports route
+ * modules while collecting page data; preparing against the user table at
+ * module evaluation made a schema-less CI build fail before any request ran.
+ */
+function getWalletStatement() {
+  return db.prepare<[string], WalletRow>(
+    "SELECT balance, bonusSpinsRemaining, bonusSpinStake, hasDeposited FROM user WHERE id = ?"
+  );
+}
 
-const updateWallet = db.prepare<[number, number, string]>(
-  "UPDATE user SET balance = ?, bonusSpinsRemaining = ? WHERE id = ?"
-);
+function updateWalletStatement() {
+  return db.prepare<[number, number, string]>(
+    "UPDATE user SET balance = ?, bonusSpinsRemaining = ? WHERE id = ?"
+  );
+}
 
-const applyDepositRow = db.prepare<[number, number, number, number, string]>(
-  "UPDATE user SET balance = ?, bonusSpinsRemaining = ?, bonusSpinStake = ?, hasDeposited = ? WHERE id = ?"
-);
+function applyDepositStatement() {
+  return db.prepare<[number, number, number, number, string]>(
+    "UPDATE user SET balance = ?, bonusSpinsRemaining = ?, bonusSpinStake = ?, hasDeposited = ? WHERE id = ?"
+  );
+}
 
 /**
  * Settles one resolved round against a user's wallet. Bonus spins are free
@@ -40,7 +51,7 @@ const applyDepositRow = db.prepare<[number, number, number, number, string]>(
  */
 export const settleRound = db.transaction(
   (userId: string, params: { stakeCharged: number; isBonusSpin: boolean; win: number }): WalletState => {
-    const row = getWallet.get(userId);
+    const row = getWalletStatement().get(userId);
     if (!row) throw new Error("Wallet not found.");
 
     if (!params.isBonusSpin && row.balance < params.stakeCharged) {
@@ -50,7 +61,7 @@ export const settleRound = db.transaction(
     const balance = Number((row.balance - (params.isBonusSpin ? 0 : params.stakeCharged) + params.win).toFixed(4));
     const bonusSpinsRemaining = params.isBonusSpin ? Math.max(0, row.bonusSpinsRemaining - 1) : row.bonusSpinsRemaining;
 
-    updateWallet.run(balance, bonusSpinsRemaining, userId);
+    updateWalletStatement().run(balance, bonusSpinsRemaining, userId);
     return { balance, bonusSpinsRemaining, bonusSpinStake: row.bonusSpinStake };
   }
 );
@@ -61,7 +72,7 @@ export const settleRound = db.transaction(
  * BONUS_CONFIG.depositTrigger — see src/lib/bonus.ts for the sizing math.
  */
 export const applyDeposit = db.transaction((userId: string, amount: number): WalletState & { bonusGranted: boolean } => {
-  const row = getWallet.get(userId);
+  const row = getWalletStatement().get(userId);
   if (!row) throw new Error("Wallet not found.");
 
   const isFirstDeposit = row.hasDeposited === 0;
@@ -71,12 +82,12 @@ export const applyDeposit = db.transaction((userId: string, amount: number): Wal
   const bonusSpinsRemaining = bonusGranted ? BONUS_CONFIG.spins : row.bonusSpinsRemaining;
   const bonusSpinStake = bonusGranted ? BONUS_CONFIG.spinStake : row.bonusSpinStake;
 
-  applyDepositRow.run(balance, bonusSpinsRemaining, bonusSpinStake, 1, userId);
+  applyDepositStatement().run(balance, bonusSpinsRemaining, bonusSpinStake, 1, userId);
   return { balance, bonusSpinsRemaining, bonusSpinStake, bonusGranted };
 });
 
 export function getWalletState(userId: string): WalletState | null {
-  const row = getWallet.get(userId);
+  const row = getWalletStatement().get(userId);
   if (!row) return null;
   return { balance: row.balance, bonusSpinsRemaining: row.bonusSpinsRemaining, bonusSpinStake: row.bonusSpinStake };
 }

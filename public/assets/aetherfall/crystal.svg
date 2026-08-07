@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">Aetherfall crystal</title>
+  <defs>
+    <linearGradient id="crystal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#cffafe"/>
+      <stop offset="0.42" stop-color="#67e8f9"/>
+      <stop offset="0.72" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#f0abfc"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#67e8f9" stop-opacity=".75"/>
+      <stop offset="1" stop-color="#67e8f9" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <circle cx="128" cy="128" r="112" fill="url(#glow)"/>
+  <path d="M128 16 194 80 166 196 128 240 90 196 62 80Z" fill="#071522" stroke="#cffafe" stroke-opacity=".32" stroke-width="5"/>
+  <path d="M128 28 181 86 158 187 128 224 98 187 75 86Z" fill="url(#crystal)"/>
+  <path d="m128 28 5 103 48-45Z" fill="#ecfeff" fill-opacity=".72"/>
+  <path d="m128 28-5 103-48-45Z" fill="#22d3ee" fill-opacity=".52"/>
+  <path d="m123 131-25 56 30 37 30-37-25-56Z" fill="#8b5cf6" fill-opacity=".72"/>
+  <path d="M128 74 138 112 176 122 138 132 128 170 118 132 80 122 118 112Z" fill="#fff" fill-opacity=".9"/>
+</svg>
