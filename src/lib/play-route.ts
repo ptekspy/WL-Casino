@@ -11,7 +11,7 @@ import { ageFromDateOfBirth, maxStakeForAge } from "@/lib/uk-compliance";
 const ALLOW_CLIENT_SEED = process.env.NODE_ENV !== "production";
 const MAX_SEED_LENGTH = 64;
 
-type PlayRequestBody = { seed?: unknown; stake?: unknown };
+type PlayRequestBody = { seed?: unknown; stake?: unknown; [key: string]: unknown };
 
 /**
  * Shared server-side play handler: stake validation, session/age/stake-cap
@@ -23,7 +23,7 @@ export async function handlePlayRequest<TRound extends { cappedWin: number }>(
   request: Request,
   config: {
     allowedStakes: readonly number[];
-    resolveRound: (input: { seed: string; stake: number }) => TRound;
+    resolveRound: (input: { seed: string; stake: number; requestBody: PlayRequestBody }) => TRound;
   }
 ): Promise<NextResponse> {
   const body = (await request.json().catch(() => ({}))) as PlayRequestBody;
@@ -67,7 +67,7 @@ export async function handlePlayRequest<TRound extends { cappedWin: number }>(
   const isBonusSpin = (session.user.bonusSpinsRemaining ?? 0) > 0;
   const stake = isBonusSpin ? (session.user.bonusSpinStake ?? requestedStake) : requestedStake;
 
-  const round = config.resolveRound({ seed: resolveSeed(body.seed), stake });
+  const round = config.resolveRound({ seed: resolveSeed(body.seed), stake, requestBody: body });
 
   try {
     const wallet = settleRound(session.user.id, { stakeCharged: stake, isBonusSpin, win: round.cappedWin });
