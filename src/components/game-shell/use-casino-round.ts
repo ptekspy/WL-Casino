@@ -20,6 +20,8 @@ export type RoundWithWallet = { cappedWin: number; wallet?: WalletState };
 export function useCasinoRound<TRound extends RoundWithWallet>(config: {
   playEndpoint: string;
   allowedStakes: readonly number[];
+  /** Adds game-specific fields to the POST body while stake remains controlled by the shared cabinet. */
+  buildRequestBody?: (stake: number) => Record<string, unknown>;
   /** Runs synchronously inside startRound, before the mutation fires — e.g. resuming an audio context on the click gesture. */
   onBeforeStart?: () => void;
 }) {
@@ -63,7 +65,7 @@ export function useCasinoRound<TRound extends RoundWithWallet>(config: {
       const response = await fetch(config.playEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stake: staked })
+        body: JSON.stringify({ stake: staked, ...(config.buildRequestBody?.(staked) ?? {}) })
       });
       if (!response.ok) {
         const problem = (await response.json().catch(() => null)) as { error?: string } | null;
