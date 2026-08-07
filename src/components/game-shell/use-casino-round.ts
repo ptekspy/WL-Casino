@@ -65,7 +65,7 @@ export function useCasinoRound<TRound extends RoundWithWallet>(config: {
       const response = await fetch(config.playEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stake: staked, ...(config.buildRequestBody?.(staked) ?? {}) })
+        body: JSON.stringify({ ...(config.buildRequestBody?.(staked) ?? {}), stake: staked })
       });
       if (!response.ok) {
         const problem = (await response.json().catch(() => null)) as { error?: string } | null;
